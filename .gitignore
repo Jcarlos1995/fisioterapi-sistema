@@ -62,8 +62,13 @@ node_modules/
 # Yarn Integrity file
 .yarn-integrity
 
-# dotenv environment variables file
+# dotenv environment variables file (nunca subir claves)
 .env
+.env.local
+.env.*.local
+
+# Build de producción (contiene variables inyectadas; generar con npm run build antes de deploy)
+build/
 
 # dataconnect generated files
 .dataconnect
