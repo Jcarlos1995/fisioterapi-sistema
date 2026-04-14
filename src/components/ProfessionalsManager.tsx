@@ -3,8 +3,10 @@ import { UserSquare2, Plus, Trash2, Mail, Phone } from 'lucide-react';
 import { Professional } from '../types';
 import { db } from '../firebaseConfig';
 import { collection, onSnapshot, addDoc, deleteDoc, doc } from 'firebase/firestore';
+import { useAuth } from '../context/AuthContext';
 
 const ProfessionalsManager: React.FC = () => {
+  const { isViewer } = useAuth();
   const [professionals, setProfessionals] = useState<Professional[]>([]);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [newProf, setNewProf] = useState({
@@ -50,23 +52,27 @@ const ProfessionalsManager: React.FC = () => {
           <h2 className="text-2xl font-bold text-slate-800">Equipo Profesional</h2>
           <p className="text-slate-500 text-sm">Gestiona los especialistas de la clínica</p>
         </div>
-        <button 
-          onClick={() => setIsModalOpen(true)}
-          className="bg-blue-600 text-white px-4 py-2 rounded-lg flex items-center gap-2 hover:bg-blue-700 transition-colors shadow-md"
-        >
-          <Plus size={20} /> Nuevo Especialista
-        </button>
+        {!isViewer && (
+          <button 
+            onClick={() => setIsModalOpen(true)}
+            className="bg-blue-600 text-white px-4 py-2 rounded-lg flex items-center gap-2 hover:bg-blue-700 transition-colors shadow-md"
+          >
+            <Plus size={20} /> Nuevo Especialista
+          </button>
+        )}
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
         {professionals.map((prof) => (
           <div key={prof.id} className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100 hover:shadow-md transition-shadow relative group">
-            <button 
-              onClick={() => handleDelete(prof.id)}
-              className="absolute top-4 right-4 text-slate-300 hover:text-rose-500 transition-colors"
-            >
-              <Trash2 size={18} />
-            </button>
+            {!isViewer && (
+              <button 
+                onClick={() => handleDelete(prof.id)}
+                className="absolute top-4 right-4 text-slate-300 hover:text-rose-500 transition-colors"
+              >
+                <Trash2 size={18} />
+              </button>
+            )}
             <div className="flex items-center gap-4 mb-4">
               <div className="bg-blue-50 p-3 rounded-xl text-blue-600">
                 <UserSquare2 size={24} />

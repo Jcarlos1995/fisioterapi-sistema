@@ -1,10 +1,12 @@
 import React, { useState, useEffect } from 'react';
-import { Package, Plus, Minus, Trash2, AlertTriangle } from 'lucide-react'; // 👈 Agregamos Minus
+import { Package, Plus, Minus, Trash2, AlertTriangle } from 'lucide-react';
 import { Product } from '../types';
 import { db } from '../firebaseConfig';
 import { collection, onSnapshot, addDoc, deleteDoc, doc, updateDoc } from 'firebase/firestore';
+import { useAuth } from '../context/AuthContext';
 
 const ProductsManager: React.FC = () => {
+  const { isViewer } = useAuth();
   const [products, setProducts] = useState<Product[]>([]);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [newProduct, setNewProduct] = useState({
@@ -69,20 +71,24 @@ const ProductsManager: React.FC = () => {
           <h2 className="text-2xl font-bold text-slate-800">Inventario</h2>
           <p className="text-slate-500 text-sm">Control de insumos</p>
         </div>
-        <button 
-          onClick={() => setIsModalOpen(true)}
-          className="bg-emerald-600 text-white px-4 py-2 rounded-lg flex items-center gap-2 hover:bg-emerald-700 shadow-md"
-        >
-          <Plus size={20} /> Nuevo Producto
-        </button>
+        {!isViewer && (
+          <button 
+            onClick={() => setIsModalOpen(true)}
+            className="bg-emerald-600 text-white px-4 py-2 rounded-lg flex items-center gap-2 hover:bg-emerald-700 shadow-md"
+          >
+            <Plus size={20} /> Nuevo Producto
+          </button>
+        )}
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
         {products.map((product) => (
           <div key={product.id} className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100 relative">
-            <button onClick={() => handleDelete(product.id)} className="absolute top-4 right-4 text-slate-300 hover:text-rose-500 transition-colors">
-              <Trash2 size={18} />
-            </button>
+            {!isViewer && (
+              <button onClick={() => handleDelete(product.id)} className="absolute top-4 right-4 text-slate-300 hover:text-rose-500 transition-colors">
+                <Trash2 size={18} />
+              </button>
+            )}
             <div className="bg-emerald-50 w-fit p-3 rounded-xl text-emerald-600 mb-4">
               <Package size={24} />
             </div>
@@ -99,24 +105,28 @@ const ProductsManager: React.FC = () => {
               <div className="flex flex-col items-end gap-2">
                 <p className="text-slate-400 text-xs uppercase font-bold text-right">Stock</p>
                 <div className={`flex items-center gap-3 p-1 rounded-xl border ${product.stock < 5 ? 'border-rose-200 bg-rose-50' : 'border-slate-100 bg-slate-50'}`}>
-                  <button 
-                    onClick={() => handleUpdateStock(product.id, product.stock, -1)}
-                    className="w-8 h-8 flex items-center justify-center rounded-lg bg-white shadow-sm hover:text-rose-500 transition-colors"
-                  >
-                    <Minus size={16} />
-                  </button>
+                  {!isViewer && (
+                    <button 
+                      onClick={() => handleUpdateStock(product.id, product.stock, -1)}
+                      className="w-8 h-8 flex items-center justify-center rounded-lg bg-white shadow-sm hover:text-rose-500 transition-colors"
+                    >
+                      <Minus size={16} />
+                    </button>
+                  )}
                   
                   <div className={`flex items-center gap-1 font-bold ${product.stock < 5 ? 'text-rose-500' : 'text-slate-700'}`}>
                     {product.stock < 5 && <AlertTriangle size={14} />}
                     <span className="min-w-[20px] text-center">{product.stock}</span>
                   </div>
 
-                  <button 
-                    onClick={() => handleUpdateStock(product.id, product.stock, 1)}
-                    className="w-8 h-8 flex items-center justify-center rounded-lg bg-white shadow-sm hover:text-emerald-600 transition-colors"
-                  >
-                    <Plus size={16} />
-                  </button>
+                  {!isViewer && (
+                    <button 
+                      onClick={() => handleUpdateStock(product.id, product.stock, 1)}
+                      className="w-8 h-8 flex items-center justify-center rounded-lg bg-white shadow-sm hover:text-emerald-600 transition-colors"
+                    >
+                      <Plus size={16} />
+                    </button>
+                  )}
                 </div>
               </div>
             </div>

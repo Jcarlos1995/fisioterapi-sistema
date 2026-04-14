@@ -1,10 +1,12 @@
 import React, { useState, useEffect } from 'react';
-import { db } from '../firebaseConfig'; // Ya no importamos storage
+import { db } from '../firebaseConfig';
 import { Story } from '../types'; 
 import { collection, addDoc, getDocs, deleteDoc, doc, query } from 'firebase/firestore';
 import { BookOpen, Plus, Trash2, HeartPulse, Loader2, Calendar, Image as ImageIcon, X } from 'lucide-react';
+import { useAuth } from '../context/AuthContext';
 
 const Stories: React.FC = () => {
+  const { isViewer } = useAuth();
   const [stories, setStories] = useState<Story[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -130,8 +132,8 @@ const Stories: React.FC = () => {
         <p className="text-slate-500 font-medium italic">Gestiona los testimonios con fotos reales de pacientes</p>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-        <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100 h-fit sticky top-8">
+      <div className={`grid grid-cols-1 ${!isViewer ? 'lg:grid-cols-3' : ''} gap-8`}>
+        {!isViewer && <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100 h-fit sticky top-8">
           <div className="flex items-center gap-2 mb-6 text-emerald-600">
             <Plus size={20} />
             <h2 className="font-bold uppercase text-sm tracking-wider">Nueva Historia</h2>
@@ -185,9 +187,9 @@ const Stories: React.FC = () => {
               {saving ? <Loader2 className="animate-spin" /> : <BookOpen size={18} />} {saving ? 'Procesando...' : 'Publicar en Web'}
             </button>
           </form>
-        </div>
+        </div>}
 
-        <div className="lg:col-span-2 space-y-4">
+        <div className={`${!isViewer ? 'lg:col-span-2' : ''} space-y-4`}>
           {loading ? (
             <div className="flex justify-center py-10"><Loader2 className="animate-spin text-slate-300" size={40} /></div>
           ) : stories.length === 0 ? (
@@ -215,9 +217,11 @@ const Stories: React.FC = () => {
                   </p>
                 </div>
               </div>
-              <button onClick={() => handleDelete(story.id!)} className="text-slate-200 hover:text-rose-500 transition-colors p-2">
-                <Trash2 size={18} />
-              </button>
+              {!isViewer && (
+                <button onClick={() => handleDelete(story.id!)} className="text-slate-200 hover:text-rose-500 transition-colors p-2">
+                  <Trash2 size={18} />
+                </button>
+              )}
             </div>
           ))}
         </div>

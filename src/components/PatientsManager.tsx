@@ -3,8 +3,10 @@ import { Plus, Search, Edit2, Trash2, X } from 'lucide-react';
 import { Patient, Professional } from '../types';
 import { db } from '../firebaseConfig'; 
 import { collection, addDoc, doc, updateDoc, deleteDoc, onSnapshot, query, where, getDocs } from 'firebase/firestore';
+import { useAuth } from '../context/AuthContext';
 
 const PatientsManager: React.FC = () => {
+  const { isViewer } = useAuth();
   const [patients, setPatients] = useState<Patient[]>([]);
   const [professionals, setProfessionals] = useState<Professional[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
@@ -99,12 +101,14 @@ const PatientsManager: React.FC = () => {
           <h1 className="text-2xl font-bold text-slate-800">Pacientes</h1>
           <p className="text-slate-500">Administra el registro de tus pacientes</p>
         </div>
-        <button 
-          onClick={() => { setCurrentPatient({}); setIsModalOpen(true); }}
-          className="flex items-center gap-2 bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors shadow-md"
-        >
-          <Plus size={20} /> Nuevo Paciente
-        </button>
+        {!isViewer && (
+          <button 
+            onClick={() => { setCurrentPatient({}); setIsModalOpen(true); }}
+            className="flex items-center gap-2 bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors shadow-md"
+          >
+            <Plus size={20} /> Nuevo Paciente
+          </button>
+        )}
       </div>
 
       <div className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
@@ -142,12 +146,16 @@ const PatientsManager: React.FC = () => {
                     </span>
                   </td>
                   <td className="px-6 py-4 text-right space-x-2">
-                    <button onClick={() => { setCurrentPatient(patient); setIsModalOpen(true); }} className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg">
-                      <Edit2 size={18} />
-                    </button>
-                    <button onClick={() => handleDelete(patient.id)} className="p-2 text-rose-600 hover:bg-rose-50 rounded-lg">
-                      <Trash2 size={18} />
-                    </button>
+                    {!isViewer && (
+                      <>
+                        <button onClick={() => { setCurrentPatient(patient); setIsModalOpen(true); }} className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg">
+                          <Edit2 size={18} />
+                        </button>
+                        <button onClick={() => handleDelete(patient.id)} className="p-2 text-rose-600 hover:bg-rose-50 rounded-lg">
+                          <Trash2 size={18} />
+                        </button>
+                      </>
+                    )}
                   </td>
                 </tr>
               ))}

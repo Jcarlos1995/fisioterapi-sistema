@@ -4,8 +4,10 @@ import { CalendarDays, Plus, Trash2, Clock, User, UserSquare2, CheckCircle2, Ale
 import { Session, Patient, Professional } from '../types';
 import { db } from '../firebaseConfig';
 import { collection, onSnapshot, addDoc, deleteDoc, doc, updateDoc } from 'firebase/firestore';
+import { useAuth } from '../context/AuthContext';
 
 const SessionsManager: React.FC = () => {
+  const { isViewer } = useAuth();
   const [sessions, setSessions] = useState<Session[]>([]);
   const [patients, setPatients] = useState<Patient[]>([]);
   const [professionals, setProfessionals] = useState<Professional[]>([]);
@@ -90,12 +92,14 @@ const SessionsManager: React.FC = () => {
           <h2 className="text-2xl font-bold text-slate-800 uppercase tracking-tight">Agenda de Sesiones</h2>
           <p className="text-slate-500 text-sm">Control de citas y tratamientos</p>
         </div>
-        <button 
-          onClick={() => setIsModalOpen(true)}
-          className="bg-indigo-600 text-white px-4 py-2 rounded-lg flex items-center gap-2 hover:bg-indigo-700 transition-all shadow-lg shadow-indigo-100 font-bold"
-        >
-          <Plus size={20} /> Agendar Cita
-        </button>
+        {!isViewer && (
+          <button 
+            onClick={() => setIsModalOpen(true)}
+            className="bg-indigo-600 text-white px-4 py-2 rounded-lg flex items-center gap-2 hover:bg-indigo-700 transition-all shadow-lg shadow-indigo-100 font-bold"
+          >
+            <Plus size={20} /> Agendar Cita
+          </button>
+        )}
       </div>
 
       <div className="grid grid-cols-1 gap-4">
@@ -140,21 +144,32 @@ const SessionsManager: React.FC = () => {
               </div>
 
               <div className="flex items-center gap-3">
-                <select 
-                  value={session.status}
-                  onChange={(e) => updateStatus(session.id, e.target.value as Session['status'])}
-                  className={`text-xs font-bold px-3 py-1.5 rounded-full border-none cursor-pointer shadow-sm ${
+                {isViewer ? (
+                  <span className={`text-xs font-bold px-3 py-1.5 rounded-full shadow-sm ${
                     session.status === 'Efectuada' ? 'bg-green-100 text-green-700' : 
                     session.status === 'Confirmada' ? 'bg-blue-100 text-blue-700' : 'bg-amber-100 text-amber-700'
-                  }`}
-                >
-                  <option value="Programada">Programada</option>
-                  <option value="Confirmada">Confirmada</option>
-                  <option value="Efectuada">Efectuada</option>
-                </select>
-                <button onClick={() => handleDelete(session.id)} className="text-slate-300 hover:text-rose-500 p-2 transition-colors">
-                  <Trash2 size={18} />
-                </button>
+                  }`}>
+                    {session.status}
+                  </span>
+                ) : (
+                  <select 
+                    value={session.status}
+                    onChange={(e) => updateStatus(session.id, e.target.value as Session['status'])}
+                    className={`text-xs font-bold px-3 py-1.5 rounded-full border-none cursor-pointer shadow-sm ${
+                      session.status === 'Efectuada' ? 'bg-green-100 text-green-700' : 
+                      session.status === 'Confirmada' ? 'bg-blue-100 text-blue-700' : 'bg-amber-100 text-amber-700'
+                    }`}
+                  >
+                    <option value="Programada">Programada</option>
+                    <option value="Confirmada">Confirmada</option>
+                    <option value="Efectuada">Efectuada</option>
+                  </select>
+                )}
+                {!isViewer && (
+                  <button onClick={() => handleDelete(session.id)} className="text-slate-300 hover:text-rose-500 p-2 transition-colors">
+                    <Trash2 size={18} />
+                  </button>
+                )}
               </div>
             </div>
           );

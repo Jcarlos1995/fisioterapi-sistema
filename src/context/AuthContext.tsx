@@ -1,22 +1,36 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import { onAuthStateChanged, User } from 'firebase/auth';
-import { auth } from '../firebaseConfig'; // Asegúrate de que esta ruta sea correcta
+import { doc, getDoc } from 'firebase/firestore';
+import { auth, db } from '../firebaseConfig';
 
 interface AuthContextType {
   user: User | null;
   loading: boolean;
+  isViewer: boolean;
 }
 
-const AuthContext = createContext<AuthContextType>({ user: null, loading: true });
+const AuthContext = createContext<AuthContextType>({ user: null, loading: true, isViewer: false });
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [user, setUser] = useState<User | null>(null);
+  const [user, setUser]       = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
+  const [isViewer, setIsViewer] = useState(false);
 
   useEffect(() => {
-    // Esta función "escucha" si alguien entra o sale
-    const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
+    const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
       setUser(currentUser);
+
+      if (currentUser) {
+        try {
+          const roleDoc = await getDoc(doc(db, 'userRoles', currentUser.uid));
+          setIsViewer(roleDoc.exists() && roleDoc.data()?.role === 'viewer');
+        } catch {
+          setIsViewer(false);
+        }
+      } else {
+        setIsViewer(false);
+      }
+
       setLoading(false);
     });
 
@@ -24,7 +38,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   }, []);
 
   return (
-    <AuthContext.Provider value={{ user, loading }}>
+    <AuthContext.Provider value={{ user, loading, isViewer }}>
       {!loading && children}
     </AuthContext.Provider>
   );
