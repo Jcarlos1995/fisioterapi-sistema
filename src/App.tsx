@@ -11,7 +11,8 @@ import {
   ChevronRight,
   Sparkles,
   LogOut,
-  BookOpen // Añadido para un icono más descriptivo en Historias
+  BookOpen,
+  KeyRound,
 } from 'lucide-react';
 
 import { signOut } from 'firebase/auth';
@@ -26,10 +27,12 @@ import ProductsManager from './components/ProductsManager';
 import SessionsManager from './components/SessionsManager';
 import BookingSystem from './components/BookingSystem';
 import Stories from './components/Stories';
+import ChangePasswordModal from './components/ChangePasswordModal';
 
 const App: React.FC = () => {
   const { user, loading } = useAuth();
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
+  const [isChangePasswordOpen, setIsChangePasswordOpen] = useState(false);
 
   const handleLogout = () => {
     try {
@@ -54,6 +57,10 @@ const App: React.FC = () => {
 
   return (
     <Router>
+      <ChangePasswordModal
+        isOpen={isChangePasswordOpen}
+        onClose={() => setIsChangePasswordOpen(false)}
+      />
       <Routes>
         {/* RUTA PÚBLICA */}
         <Route path="/agendar" element={<BookingSystem />} />
@@ -85,7 +92,26 @@ const App: React.FC = () => {
                     <SidebarItem to="/stories" icon={<BookOpen size={20} />} label="Historias" expanded={isSidebarOpen} />
                   </nav>
 
-                  <div className="px-4 py-2">
+                  <div className="px-4 py-2 space-y-1">
+                    {/* Email del usuario activo */}
+                    {isSidebarOpen && user?.email && (
+                      <div className="px-3 py-2 mb-1">
+                        <p className="text-[11px] text-slate-400 font-medium uppercase tracking-wide mb-0.5">Sesión activa</p>
+                        <p className="text-xs text-slate-600 font-semibold truncate">{user.email}</p>
+                      </div>
+                    )}
+
+                    {/* Cambiar contraseña */}
+                    <button
+                      onClick={() => setIsChangePasswordOpen(true)}
+                      className={`w-full flex items-center gap-3 p-3 rounded-xl text-slate-500 hover:bg-slate-100 hover:text-slate-800 transition-all ${!isSidebarOpen && 'justify-center'}`}
+                      title="Cambiar Contraseña"
+                    >
+                      <KeyRound size={20} />
+                      {isSidebarOpen && <span className="font-medium">Cambiar Contraseña</span>}
+                    </button>
+
+                    {/* Cerrar sesión */}
                     <button 
                       onClick={handleLogout}
                       className={`w-full flex items-center gap-3 p-3 rounded-xl text-red-500 hover:bg-red-50 transition-all ${!isSidebarOpen && 'justify-center'}`}
