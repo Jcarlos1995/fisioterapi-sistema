@@ -15,7 +15,7 @@ import {
 } from 'lucide-react'; 
 import { db } from '../firebaseConfig';
 import { collection, getDocs, onSnapshot, query, where } from 'firebase/firestore'; 
-import { GoogleGenerativeAI } from '@google/generative-ai';
+import { getFunctions, httpsCallable } from 'firebase/functions';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
 import { Link } from 'react-router-dom';
 
@@ -38,6 +38,8 @@ const Dashboard: React.FC = () => {
   const COLORS = ['#10b981', '#3b82f6', '#6366f1', '#f59e0b'];
 
   useEffect(() => {
+    let cancelled = false;
+
     // Escuchar cambios en productos (Stock)
     const unsubProducts = onSnapshot(collection(db, 'products'), (snapshot) => {
       let totalValue = 0;
@@ -77,6 +79,7 @@ const Dashboard: React.FC = () => {
         const efectuadas = sessions.filter(s => s.status?.toLowerCase() === 'efectuada').length;
         const confirmadas = sessions.filter(s => s.status?.toLowerCase() === 'confirmada').length;
         const programadas = sessions.filter(s => s.status?.toLowerCase() === 'programada').length;
+        const pagadas     = sessions.filter(s => s.status?.toLowerCase() === 'pagada').length;
 
         const barData = professionals.map((pro: any) => {
           const conteoEfectuadas = sessions.filter((s: any) => {
@@ -95,46 +98,33 @@ const Dashboard: React.FC = () => {
           };
         });
 
+        if (cancelled) return;
         setStats(prev => ({
           ...prev,
           patients: pSnap.size,
           professionals: proSnap.size,
           doneSessions: efectuadas,
-          totalSessions: efectuadas + confirmadas + programadas,
+          totalSessions: efectuadas + confirmadas + programadas + pagadas,
         }));
-
         setChartData(barData);
       } catch (error) {
-        console.error("Error cargando datos:", error);
+        if (!cancelled) console.error("Error cargando datos:", error);
       }
     };
 
     fetchData();
     return () => {
+      cancelled = true;
       unsubProducts();
       unsubWebCitas();
     }; 
   }, [selectedMonth]);
 
   
- const generateAnalysis = async () => {
+  const generateAnalysis = async () => {
     setLoadingIA(true);
     setAnalysis(null);
     try {
-      const apiKey = process.env.REACT_APP_GEMINI_API_KEY;
-      
-      if (!apiKey) {
-        setAnalysis(
-          "Error: REACT_APP_GEMINI_API_KEY no está definida. " +
-          "Asegúrate de tener un archivo .env en la raíz del proyecto (sistema-fisioterapia) con: REACT_APP_GEMINI_API_KEY=tu_key. " +
-          "Luego reinicia el servidor con 'npm start'."
-        );
-        return;
-      }
-
-      const genAI = new GoogleGenerativeAI(apiKey);
-      const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
-
       const prompt = `Actúa como un consultor experto en gestión de clínicas de fisioterapia y rehabilitación. 
       Analiza los siguientes indicadores de Fisioterapi Chepén:
       - Pacientes registrados: ${stats.patients}
@@ -145,16 +135,21 @@ const Dashboard: React.FC = () => {
       
       Proporciona un análisis ejecutivo breve de 3 puntos clave y una recomendación estratégica.`;
 
-      const result = await model.generateContent(prompt);
-      const response = await result.response;
-      setAnalysis(response.text());
+      const functions   = getFunctions(undefined, "us-central1");
+      const geminiProxy = httpsCallable<{ prompt: string }, { text: string }>(functions, "geminiProxy");
+      const result      = await geminiProxy({ prompt });
+      setAnalysis(result.data.text);
 
     } catch (error: any) {
       console.error("Error en el análisis inteligente:", error);
-      const detail = error?.message || error?.toString?.() || "Error desconocido";
-      setAnalysis(
-        "Error: No se pudo conectar con la IA. Verifique su API Key.\n\nDetalle: " + detail
-      );
+      const msg: string = error?.message ?? '';
+      if (msg.includes('503') || msg.includes('unavailable')) {
+        setAnalysis("El servicio de IA está con alta demanda en este momento. Espera unos segundos e inténtalo de nuevo.");
+      } else if (msg.includes('429') || msg.includes('resource-exhausted')) {
+        setAnalysis("Se alcanzó el límite de uso de la IA. Intenta de nuevo en unos minutos.");
+      } else {
+        setAnalysis("No se pudo conectar con el análisis IA. Verifica tu conexión e intenta de nuevo.");
+      }
     } finally {
       setLoadingIA(false);
     }
@@ -274,7 +269,7 @@ const Dashboard: React.FC = () => {
             <Pie 
               data={[
                 {name: 'Efectuadas', value: stats.doneSessions}, 
-                {name: 'Pendientes/Otras', value: stats.totalSessions - stats.doneSessions}
+                {name: 'Pendientes/Otras', value: Math.max(0, stats.totalSessions - stats.doneSessions)}
               ]} 
               innerRadius={60} 
               outerRadius={80} 

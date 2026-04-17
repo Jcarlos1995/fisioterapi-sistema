@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
 import { auth } from '../firebaseConfig';
 import { signInWithEmailAndPassword } from 'firebase/auth';
-import { LogIn, Activity } from 'lucide-react';
+import { LogIn, Activity, ArrowLeft } from 'lucide-react';
+import { LANDING_URL } from '../config';
 
 const Login: React.FC = () => {
   const [email, setEmail] = useState('');
@@ -19,7 +20,20 @@ const Login: React.FC = () => {
       // Al loguearse, el AuthContext detectará el cambio automáticamente
     } catch (err: any) {
       console.error("Error de login:", err);
-      setError('Credenciales incorrectas. Verifica tu correo y contraseña.');
+      const code = err?.code ?? '';
+      if (code === 'auth/invalid-credential' || code === 'auth/wrong-password') {
+        setError('Contraseña incorrecta. Verifica tus datos.');
+      } else if (code === 'auth/user-not-found') {
+        setError('No existe una cuenta con ese correo electrónico.');
+      } else if (code === 'auth/too-many-requests') {
+        setError('Demasiados intentos fallidos. Espera unos minutos e intenta de nuevo.');
+      } else if (code === 'auth/user-disabled') {
+        setError('Esta cuenta ha sido deshabilitada. Contacta al administrador.');
+      } else if (code === 'auth/network-request-failed') {
+        setError('Error de conexión. Verifica tu acceso a internet.');
+      } else {
+        setError('Error al iniciar sesión. Intenta de nuevo.');
+      }
     } finally {
       setLoading(false);
     }
@@ -27,6 +41,16 @@ const Login: React.FC = () => {
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-slate-50 p-4">
+
+      {/* Botón volver a la landing */}
+      <a
+        href={LANDING_URL}
+        className="fixed top-5 left-5 flex items-center gap-2 text-sm font-semibold text-slate-500 hover:text-blue-600 transition-colors bg-white px-4 py-2 rounded-full shadow-sm border border-slate-200 hover:border-blue-200"
+      >
+        <ArrowLeft size={16} />
+        Volver al inicio
+      </a>
+
       <div className="max-w-md w-full bg-white rounded-3xl shadow-xl p-8 border border-slate-100">
         {/* Cabecera del Login */}
         <div className="flex flex-col items-center mb-8">

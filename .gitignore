@@ -65,7 +65,10 @@ node_modules/
 # dotenv environment variables file (nunca subir claves)
 .env
 .env.local
+.env.example
 .env.*.local
+functions/.env
+functions/lib/
 
 # Build de producción (contiene variables inyectadas; generar con npm run build antes de deploy)
 build/

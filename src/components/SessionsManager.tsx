@@ -1,17 +1,21 @@
 import { THERAPY_TYPES } from '../constants';
 import React, { useState, useEffect } from 'react';
-import { CalendarDays, Plus, Trash2, Clock, User, UserSquare2, CheckCircle2, AlertCircle } from 'lucide-react';
+import { CalendarDays, Plus, Trash2, Clock, UserSquare2 } from 'lucide-react';
 import { Session, Patient, Professional } from '../types';
 import { db } from '../firebaseConfig';
 import { collection, onSnapshot, addDoc, deleteDoc, doc, updateDoc } from 'firebase/firestore';
 import { useAuth } from '../context/AuthContext';
+import { useToast } from '../context/ToastContext';
+import useEscKey from '../hooks/useEscKey';
 
 const SessionsManager: React.FC = () => {
-  const { isViewer } = useAuth();
+  const { isTI, permissions } = useAuth();
+  const { showToast } = useToast();
   const [sessions, setSessions] = useState<Session[]>([]);
   const [patients, setPatients] = useState<Patient[]>([]);
   const [professionals, setProfessionals] = useState<Professional[]>([]);
   const [isModalOpen, setIsModalOpen] = useState(false);
+  useEscKey(() => setIsModalOpen(false), isModalOpen);
 
   const [newSession, setNewSession] = useState({
     patientId: '',
@@ -59,6 +63,14 @@ const SessionsManager: React.FC = () => {
       alert("Por favor selecciona un paciente y un profesional");
       return;
     }
+    if (!newSession.date) {
+      alert("Por favor selecciona una fecha para la cita");
+      return;
+    }
+    if (!newSession.time) {
+      alert("Por favor selecciona una hora para la cita");
+      return;
+    }
 
     try {
       await addDoc(collection(db, 'sessions'), newSession);
@@ -67,18 +79,26 @@ const SessionsManager: React.FC = () => {
         patientId: '', professionalId: '', date: '', time: '',
         therapyType: '', status: 'Programada', notes: ''
       });
+      showToast('Cita agendada');
     } catch (error) {
       console.error("Error al agendar sesión:", error);
     }
   };
 
   const updateStatus = async (id: string, newStatus: Session['status']) => {
-    await updateDoc(doc(db, 'sessions', id), { status: newStatus });
+    try {
+      await updateDoc(doc(db, 'sessions', id), { status: newStatus });
+      showToast();
+    } catch (error) {
+      console.error("Error al actualizar estado:", error);
+      alert("No se pudo actualizar el estado. Verifica tu conexión e inténtalo de nuevo.");
+    }
   };
 
   const handleDelete = async (id: string) => {
     if (window.confirm('¿Eliminar esta cita?')) {
       await deleteDoc(doc(db, 'sessions', id));
+      showToast('Cita eliminada');
     }
   };
 
@@ -92,7 +112,7 @@ const SessionsManager: React.FC = () => {
           <h2 className="text-2xl font-bold text-slate-800 uppercase tracking-tight">Agenda de Sesiones</h2>
           <p className="text-slate-500 text-sm">Control de citas y tratamientos</p>
         </div>
-        {!isViewer && (
+        {(isTI || permissions.appointments.add) && (
           <button 
             onClick={() => setIsModalOpen(true)}
             className="bg-indigo-600 text-white px-4 py-2 rounded-lg flex items-center gap-2 hover:bg-indigo-700 transition-all shadow-lg shadow-indigo-100 font-bold"
@@ -144,10 +164,12 @@ const SessionsManager: React.FC = () => {
               </div>
 
               <div className="flex items-center gap-3">
-                {isViewer ? (
+                {!(isTI || permissions.appointments.edit) ? (
                   <span className={`text-xs font-bold px-3 py-1.5 rounded-full shadow-sm ${
-                    session.status === 'Efectuada' ? 'bg-green-100 text-green-700' : 
-                    session.status === 'Confirmada' ? 'bg-blue-100 text-blue-700' : 'bg-amber-100 text-amber-700'
+                    session.status === 'Pagada'    ? 'bg-emerald-100 text-emerald-700' :
+                    session.status === 'Efectuada' ? 'bg-green-100 text-green-700' :
+                    session.status === 'Confirmada'? 'bg-blue-100 text-blue-700' :
+                                                     'bg-amber-100 text-amber-700'
                   }`}>
                     {session.status}
                   </span>
@@ -156,16 +178,19 @@ const SessionsManager: React.FC = () => {
                     value={session.status}
                     onChange={(e) => updateStatus(session.id, e.target.value as Session['status'])}
                     className={`text-xs font-bold px-3 py-1.5 rounded-full border-none cursor-pointer shadow-sm ${
-                      session.status === 'Efectuada' ? 'bg-green-100 text-green-700' : 
-                      session.status === 'Confirmada' ? 'bg-blue-100 text-blue-700' : 'bg-amber-100 text-amber-700'
+                      session.status === 'Pagada'    ? 'bg-emerald-100 text-emerald-700' :
+                      session.status === 'Efectuada' ? 'bg-green-100 text-green-700' :
+                      session.status === 'Confirmada'? 'bg-blue-100 text-blue-700' :
+                                                       'bg-amber-100 text-amber-700'
                     }`}
                   >
                     <option value="Programada">Programada</option>
                     <option value="Confirmada">Confirmada</option>
                     <option value="Efectuada">Efectuada</option>
+                    <option value="Pagada">Pagada</option>
                   </select>
                 )}
-                {!isViewer && (
+                {(isTI || permissions.appointments.delete) && (
                   <button onClick={() => handleDelete(session.id)} className="text-slate-300 hover:text-rose-500 p-2 transition-colors">
                     <Trash2 size={18} />
                   </button>
@@ -201,8 +226,8 @@ const SessionsManager: React.FC = () => {
                 </select>
               </div>
               <div className="grid grid-cols-2 gap-4">
-                <input type="date" className="w-full p-3 rounded-xl border border-slate-200" onChange={e => setNewSession({...newSession, date: e.target.value})} />
-                <input type="time" className="w-full p-3 rounded-xl border border-slate-200" onChange={e => setNewSession({...newSession, time: e.target.value})} />
+                <input required type="date" className="w-full p-3 rounded-xl border border-slate-200" onChange={e => setNewSession({...newSession, date: e.target.value})} />
+                <input required type="time" className="w-full p-3 rounded-xl border border-slate-200" onChange={e => setNewSession({...newSession, time: e.target.value})} />
               </div>
               <div>
                 <label className="text-xs font-bold text-slate-500 uppercase ml-1">Tipo de Terapia</label>

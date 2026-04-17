@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import useEscKey from '../hooks/useEscKey';
 import { X, KeyRound, Eye, EyeOff, CheckCircle2, AlertCircle, Loader2 } from 'lucide-react';
 import {
   updatePassword,
@@ -22,9 +23,8 @@ const ChangePasswordModal: React.FC<ChangePasswordModalProps> = ({ isOpen, onClo
   const [showCurrent, setShowCurrent]   = useState(false);
   const [showNew, setShowNew]           = useState(false);
   const [showConfirm, setShowConfirm]   = useState(false);
-
-  const [status, setStatus]   = useState<Status>('idle');
-  const [errorMsg, setErrorMsg] = useState('');
+  const [status, setStatus]             = useState<Status>('idle');
+  const [errorMsg, setErrorMsg]         = useState('');
 
   const reset = () => {
     setCurrentPassword('');
@@ -37,10 +37,9 @@ const ChangePasswordModal: React.FC<ChangePasswordModalProps> = ({ isOpen, onClo
     setShowConfirm(false);
   };
 
-  const handleClose = () => {
-    reset();
-    onClose();
-  };
+  const handleClose = () => { reset(); onClose(); };
+
+  useEscKey(handleClose, isOpen);
 
   const getFirebaseError = (code: string): string => {
     switch (code) {

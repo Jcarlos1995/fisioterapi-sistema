@@ -1,11 +1,34 @@
+export type UserRole = 'ti' | 'admin' | 'operador' | 'viewer';
 
-export interface Patient {
-  id: string;
-  name: string;
-  email: string;
-  age: number;
-  phone: string;
+export interface ModulePermissions {
+  add: boolean;
+  edit: boolean;
+  delete: boolean;
 }
+
+export interface UserPermissions {
+  professionals: ModulePermissions;
+  patients:      ModulePermissions;
+  appointments:  ModulePermissions;
+  products:      ModulePermissions;
+  stories:       ModulePermissions;
+}
+
+export const DEFAULT_PERMISSIONS: UserPermissions = {
+  professionals: { add: false, edit: false, delete: false },
+  patients:      { add: false, edit: false, delete: false },
+  appointments:  { add: false, edit: false, delete: false },
+  products:      { add: false, edit: false, delete: false },
+  stories:       { add: false, edit: false, delete: false },
+};
+
+export const FULL_PERMISSIONS: UserPermissions = {
+  professionals: { add: true, edit: true, delete: true },
+  patients:      { add: true, edit: true, delete: true },
+  appointments:  { add: true, edit: true, delete: true },
+  products:      { add: true, edit: true, delete: true },
+  stories:       { add: true, edit: true, delete: true },
+};
 
 export interface Professional {
   id: string;
@@ -33,21 +56,17 @@ export interface Session {
   date: string;
   time: string;
   therapyType: string;
-  status: 'Programada' | 'Confirmada' | 'Efectuada';
+  status: 'Programada' | 'Confirmada' | 'Efectuada' | 'Pagada';
   notes?: string;
+  // Campos adicionales escritos por BookingSystem (reservas online)
+  type?: 'online-booking';
+  endDate?: string;
+  createdAt?: string;
 }
 
-export type SessionStatus = 'Programada' | 'Confirmada' | 'Efectuada' | 'Cancelada';
+export type SessionStatus = 'Programada' | 'Confirmada' | 'Efectuada' | 'Pagada';
 
 export type TherapyType = 'Fisioterapia' | 'Quiropraxia' | 'Masajes' | 'Terapia de Temporada' | 'Medicina General' | 'Otros';
-
-export interface DashboardStats {
-  totalPatients: number;
-  totalProfessionals: number;
-  totalSessions: number;
-  professionalsPerformance: { name: string; patientsCount: number }[];
-  therapyDistribution: { name: string; value: number }[];
-}
 
 export interface Product {
   id: string;

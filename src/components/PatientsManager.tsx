@@ -4,14 +4,18 @@ import { Patient, Professional } from '../types';
 import { db } from '../firebaseConfig'; 
 import { collection, addDoc, doc, updateDoc, deleteDoc, onSnapshot, query, where, getDocs } from 'firebase/firestore';
 import { useAuth } from '../context/AuthContext';
+import { useToast } from '../context/ToastContext';
+import useEscKey from '../hooks/useEscKey';
 
 const PatientsManager: React.FC = () => {
-  const { isViewer } = useAuth();
+  const { isTI, permissions } = useAuth();
+  const { showToast } = useToast();
   const [patients, setPatients] = useState<Patient[]>([]);
   const [professionals, setProfessionals] = useState<Professional[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [currentPatient, setCurrentPatient] = useState<Partial<Patient>>({});
+  useEscKey(() => setIsModalOpen(false), isModalOpen);
 
   useEffect(() => {
     const unsubPatients = onSnapshot(collection(db, "patients"), (snapshot) => {
@@ -36,18 +40,20 @@ const PatientsManager: React.FC = () => {
     };
   }, []);
 
-  const filtered = patients.filter(p => 
-    p.name.toLowerCase().includes(searchTerm.toLowerCase()) || 
-    p.email.toLowerCase().includes(searchTerm.toLowerCase())
+  const term = searchTerm.toLowerCase();
+  const filtered = patients.filter(p =>
+    (p.name?.toLowerCase() ?? '').includes(term) ||
+    (p.email?.toLowerCase() ?? '').includes(term)
   );
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
       if (currentPatient.id) {
-        // 1. Actualizar los datos del paciente en la colección 'patients'
+        // 1. Actualizar los datos del paciente sin enviar el campo id
+        const { id: _id, createdAt: _createdAt, ...patientData } = currentPatient as Patient;
         const patientRef = doc(db, "patients", currentPatient.id);
-        await updateDoc(patientRef, currentPatient);
+        await updateDoc(patientRef, patientData);
 
         // 2. ACTUALIZACIÓN EN CASCADA: Actualizar profesional en la colección 'sessions'
         if (currentPatient.professionalId) {
@@ -74,6 +80,7 @@ const PatientsManager: React.FC = () => {
       }
       setIsModalOpen(false);
       setCurrentPatient({});
+      showToast();
     } catch (error) {
       console.error("Error en Firebase:", error);
       alert("Error al procesar la solicitud");
@@ -84,6 +91,7 @@ const PatientsManager: React.FC = () => {
     if (window.confirm('¿Estás seguro de eliminar este paciente?')) {
       try {
         await deleteDoc(doc(db, "patients", id));
+        showToast('Paciente eliminado');
       } catch (error) {
         console.error("Error al eliminar:", error);
       }
@@ -101,7 +109,7 @@ const PatientsManager: React.FC = () => {
           <h1 className="text-2xl font-bold text-slate-800">Pacientes</h1>
           <p className="text-slate-500">Administra el registro de tus pacientes</p>
         </div>
-        {!isViewer && (
+        {(isTI || permissions.patients.add) && (
           <button 
             onClick={() => { setCurrentPatient({}); setIsModalOpen(true); }}
             className="flex items-center gap-2 bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors shadow-md"
@@ -146,15 +154,15 @@ const PatientsManager: React.FC = () => {
                     </span>
                   </td>
                   <td className="px-6 py-4 text-right space-x-2">
-                    {!isViewer && (
-                      <>
-                        <button onClick={() => { setCurrentPatient(patient); setIsModalOpen(true); }} className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg">
-                          <Edit2 size={18} />
-                        </button>
-                        <button onClick={() => handleDelete(patient.id)} className="p-2 text-rose-600 hover:bg-rose-50 rounded-lg">
-                          <Trash2 size={18} />
-                        </button>
-                      </>
+                    {(isTI || permissions.patients.edit) && (
+                      <button onClick={() => { setCurrentPatient(patient); setIsModalOpen(true); }} className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg">
+                        <Edit2 size={18} />
+                      </button>
+                    )}
+                    {(isTI || permissions.patients.delete) && (
+                      <button onClick={() => handleDelete(patient.id)} className="p-2 text-rose-600 hover:bg-rose-50 rounded-lg">
+                        <Trash2 size={18} />
+                      </button>
                     )}
                   </td>
                 </tr>

@@ -17,6 +17,7 @@ import {
 
 import { signOut } from 'firebase/auth';
 import { auth } from './firebaseConfig';
+import { LANDING_URL } from './config';
 
 import Dashboard from './components/Dashboard';
 import { useAuth } from './context/AuthContext';
@@ -34,15 +35,15 @@ const App: React.FC = () => {
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const [isChangePasswordOpen, setIsChangePasswordOpen] = useState(false);
 
-  const handleLogout = () => {
+  const handleLogout = async () => {
     try {
-      window.location.replace('https://fisiochepen-oficial.web.app');
-      signOut(auth).catch(err => console.error("Error background signout:", err));
+      await signOut(auth);
       localStorage.clear();
       sessionStorage.clear();
+      window.location.replace(LANDING_URL);
     } catch (error) {
       console.error("Error al cerrar sesión:", error);
-      window.location.href = 'https://fisiochepen-oficial.web.app';
+      window.location.replace(LANDING_URL);
     }
   };
 

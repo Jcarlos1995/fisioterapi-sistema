@@ -4,9 +4,11 @@ import { Story } from '../types';
 import { collection, addDoc, getDocs, deleteDoc, doc, query } from 'firebase/firestore';
 import { BookOpen, Plus, Trash2, HeartPulse, Loader2, Calendar, Image as ImageIcon, X } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
+import { useToast } from '../context/ToastContext';
 
 const Stories: React.FC = () => {
-  const { isViewer } = useAuth();
+  const { isTI, permissions } = useAuth();
+  const { showToast } = useToast();
   const [stories, setStories] = useState<Story[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -104,6 +106,7 @@ const Stories: React.FC = () => {
       setImageFile(null);
       setPreviewUrl(null);
       fetchStories();
+      showToast('Historia publicada');
     } catch (e) { 
       console.error("Error al guardar:", e); 
     } finally { 
@@ -115,6 +118,7 @@ const Stories: React.FC = () => {
     if (window.confirm("¿Eliminar esta historia?")) {
       await deleteDoc(doc(db, 'stories', id!));
       fetchStories();
+      showToast('Historia eliminada');
     }
   };
 
@@ -132,8 +136,8 @@ const Stories: React.FC = () => {
         <p className="text-slate-500 font-medium italic">Gestiona los testimonios con fotos reales de pacientes</p>
       </div>
 
-      <div className={`grid grid-cols-1 ${!isViewer ? 'lg:grid-cols-3' : ''} gap-8`}>
-        {!isViewer && <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100 h-fit sticky top-8">
+      <div className={`grid grid-cols-1 ${(isTI || permissions.stories.add) ? 'lg:grid-cols-3' : ''} gap-8`}>
+        {(isTI || permissions.stories.add) && <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100 h-fit sticky top-8">
           <div className="flex items-center gap-2 mb-6 text-emerald-600">
             <Plus size={20} />
             <h2 className="font-bold uppercase text-sm tracking-wider">Nueva Historia</h2>
@@ -189,7 +193,7 @@ const Stories: React.FC = () => {
           </form>
         </div>}
 
-        <div className={`${!isViewer ? 'lg:col-span-2' : ''} space-y-4`}>
+        <div className={`${(isTI || permissions.stories.add) ? 'lg:col-span-2' : ''} space-y-4`}>
           {loading ? (
             <div className="flex justify-center py-10"><Loader2 className="animate-spin text-slate-300" size={40} /></div>
           ) : stories.length === 0 ? (
@@ -217,7 +221,7 @@ const Stories: React.FC = () => {
                   </p>
                 </div>
               </div>
-              {!isViewer && (
+              {(isTI || permissions.stories.delete) && (
                 <button onClick={() => handleDelete(story.id!)} className="text-slate-200 hover:text-rose-500 transition-colors p-2">
                   <Trash2 size={18} />
                 </button>
