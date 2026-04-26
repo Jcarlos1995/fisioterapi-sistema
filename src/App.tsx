@@ -18,6 +18,7 @@ import {
 import { signOut } from 'firebase/auth';
 import { auth } from './firebaseConfig';
 import { LANDING_URL } from './config';
+import logoFisioterapia from './assets/logo-fisioterapia.png';
 
 import Dashboard from './components/Dashboard';
 import { useAuth } from './context/AuthContext';
@@ -86,11 +87,14 @@ const App: React.FC = () => {
               <div className="flex h-screen overflow-hidden bg-slate-50">
                 {/* Sidebar */}
                 <aside className={`${isSidebarOpen ? 'w-64' : 'w-20'} bg-white border-r border-slate-200 transition-all duration-300 flex flex-col z-20`}>
-                  <div className="p-6 flex items-center gap-3">
-                    <div className="bg-blue-600 p-2 rounded-lg text-white">
-                      <span className="shrink-0"><Activity size={24} /></span>
-                    </div>
-                    {isSidebarOpen && <span className="font-bold text-xl text-slate-800 uppercase tracking-tight">FISIOTERAPI</span>}
+                  <div className="p-4 flex items-center justify-center">
+                    {isSidebarOpen ? (
+                      <img src={logoFisioterapia} alt="Fisioterapi Chepén" className="h-16 w-auto object-contain" />
+                    ) : (
+                      <div className="bg-blue-600 p-2 rounded-lg text-white">
+                        <Activity size={24} />
+                      </div>
+                    )}
                   </div>
 
                   <nav className="flex-1 mt-6 px-4 space-y-2 overflow-y-auto">
