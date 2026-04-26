@@ -1,24 +1,57 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   Users, UserSquare2, Package, Sparkles, BrainCircuit,
-  Activity, Calendar, ClipboardList, AlertTriangle, X, BellRing, ArrowRight,
+  Activity, Calendar, ClipboardList, AlertTriangle, X, BellRing, ArrowRight, CheckCheck,
 } from 'lucide-react';
-import { auth } from '../firebaseConfig';
+import { auth, db } from '../firebaseConfig';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
 import { Link } from 'react-router-dom';
+import { collection, doc, onSnapshot, orderBy, query, updateDoc, where } from 'firebase/firestore';
 import StatCard from './StatCard';
 import { useDashboardData } from '../hooks/useDashboardData';
+import { useAuth } from '../context/AuthContext';
+import { useToast } from '../context/ToastContext';
 
 const MONTHS = ["Enero","Febrero","Marzo","Abril","Mayo","Junio","Julio","Agosto","Septiembre","Octubre","Noviembre","Diciembre"];
 const COLORS  = ['#10b981', '#3b82f6', '#6366f1', '#f59e0b'];
 
+interface CancellationNotification {
+  id: string;
+  patientName: string;
+  therapyType: string;
+  sessionDate: string;
+  sessionTime: string;
+  reason?: string | null;
+}
+
 const Dashboard: React.FC = () => {
+  const { isTI, permissions } = useAuth();
+  const { showToast } = useToast();
   const [selectedMonth,   setSelectedMonth]   = useState(new Date().getMonth());
   const [showStockAlert,  setShowStockAlert]   = useState(true);
   const [analysis,        setAnalysis]         = useState<string | null>(null);
   const [loadingIA,       setLoadingIA]        = useState(false);
+  const [cancellations, setCancellations] = useState<CancellationNotification[]>([]);
 
   const { stats, chartData, webPendingAppointments } = useDashboardData(selectedMonth);
+
+  useEffect(() => {
+    const q = query(
+      collection(db, 'cancellationNotifications'),
+      where('read', '==', false),
+      orderBy('cancelledAt', 'desc')
+    );
+
+    const unsub = onSnapshot(q, (snapshot) => {
+      const rows = snapshot.docs.map((item) => {
+        const data = item.data() as Omit<CancellationNotification, 'id'>;
+        return { id: item.id, ...data };
+      });
+      setCancellations(rows);
+    });
+
+    return () => unsub();
+  }, []);
 
   const generateAnalysis = async () => {
     setLoadingIA(true);
@@ -84,6 +117,16 @@ const Dashboard: React.FC = () => {
       </body></html>`);
     printWindow.document.close();
     setTimeout(() => printWindow.print(), 500);
+  };
+
+  const markAsRead = async (id: string) => {
+    if (!(isTI || permissions.appointments.edit)) return;
+    try {
+      await updateDoc(doc(db, 'cancellationNotifications', id), { read: true });
+      showToast('Cancelación marcada como leída.');
+    } catch {
+      showToast('No se pudo marcar la notificación como leída.', 'error');
+    }
   };
 
   return (
@@ -184,6 +227,46 @@ const Dashboard: React.FC = () => {
             <div className="flex items-center gap-1"><div className="w-3 h-3 bg-blue-500 rounded-full"/><span className="text-[10px] font-bold text-slate-500 uppercase">Otras</span></div>
           </div>
         </div>
+      </div>
+
+      <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100">
+        <div className="flex items-center justify-between gap-3 mb-4">
+          <h3 className="font-bold text-slate-700">Cancelaciones recientes</h3>
+          <span className="text-xs font-bold bg-rose-100 text-rose-700 px-2.5 py-1 rounded-full">
+            {cancellations.length} pendientes
+          </span>
+        </div>
+
+        {cancellations.length === 0 ? (
+          <p className="text-sm text-slate-500">No hay cancelaciones pendientes de revisar.</p>
+        ) : (
+          <div className="space-y-3">
+            {cancellations.map((item) => (
+              <article key={item.id} className="rounded-xl border border-slate-200 p-4 flex items-start justify-between gap-4">
+                <div>
+                  <p className="text-sm font-semibold text-slate-800">
+                    PACIENTE: {item.patientName} ha cancelado su cita
+                  </p>
+                  <p className="text-sm text-slate-600 mt-1">
+                    {item.therapyType} - {item.sessionDate} {item.sessionTime}
+                  </p>
+                  {item.reason && (
+                    <p className="text-xs text-slate-500 mt-1">Motivo: {item.reason}</p>
+                  )}
+                </div>
+                {(isTI || permissions.appointments.edit) && (
+                  <button
+                    onClick={() => markAsRead(item.id)}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold"
+                  >
+                    <CheckCheck size={14} />
+                    Marcar leído
+                  </button>
+                )}
+              </article>
+            ))}
+          </div>
+        )}
       </div>
 
       {analysis && (
