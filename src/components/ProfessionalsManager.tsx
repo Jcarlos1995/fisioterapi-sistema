@@ -6,6 +6,7 @@ import { collection, onSnapshot, addDoc, deleteDoc, doc, updateDoc, getDocs } fr
 import { useAuth } from '../context/AuthContext';
 import { useToast } from '../context/ToastContext';
 import useEscKey from '../hooks/useEscKey';
+import ConfirmModal from './ConfirmModal';
 
 interface UserRoleDoc {
   uid:    string;
@@ -47,6 +48,8 @@ const PermissionGroup: React.FC<{
 );
 
 const ProfessionalsManager: React.FC = () => {
+  /* isViewer = usuario solo lectura; se mantiene el binding para restricciones futuras en esta vista */
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars -- isViewer reservado (rol viewer)
   const { user, isViewer, isTI, permissions } = useAuth();
   const { showToast } = useToast();
   const [professionals, setProfessionals] = useState<Professional[]>([]);
@@ -109,11 +112,16 @@ const ProfessionalsManager: React.FC = () => {
     }
   };
 
-  const handleDelete = async (id: string) => {
-    if (window.confirm('¿Eliminar este profesional?')) {
-      await deleteDoc(doc(db, 'professionals', id));
-      showToast('Profesional eliminado');
-    }
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+
+  const handleDelete = (id: string) => setConfirmDeleteId(id);
+
+  const confirmDeleteProfessional = async () => {
+    if (!confirmDeleteId) return;
+    const id = confirmDeleteId;
+    setConfirmDeleteId(null);
+    await deleteDoc(doc(db, 'professionals', id));
+    showToast('Profesional eliminado');
   };
 
   const openUsersModal = async () => {
@@ -145,6 +153,13 @@ const ProfessionalsManager: React.FC = () => {
 
   return (
     <div className="space-y-6">
+      {confirmDeleteId && (
+        <ConfirmModal
+          message="¿Eliminar este profesional? Esta acción no se puede deshacer."
+          onConfirm={confirmDeleteProfessional}
+          onCancel={() => setConfirmDeleteId(null)}
+        />
+      )}
       <div className="flex justify-between items-center">
         <div>
           <h2 className="text-2xl font-bold text-slate-800">Equipo Profesional</h2>

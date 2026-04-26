@@ -1,10 +1,12 @@
 import React, { useState, useEffect } from 'react';
-import { db } from '../firebaseConfig';
-import { Story } from '../types'; 
+import { db, storage } from '../firebaseConfig';
+import { Story } from '../types';
 import { collection, addDoc, getDocs, deleteDoc, doc, query } from 'firebase/firestore';
+import { ref, uploadBytes, getDownloadURL, deleteObject } from 'firebase/storage';
 import { BookOpen, Plus, Trash2, HeartPulse, Loader2, Calendar, Image as ImageIcon, X } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useToast } from '../context/ToastContext';
+import ConfirmModal from './ConfirmModal';
 
 const Stories: React.FC = () => {
   const { isTI, permissions } = useAuth();
@@ -13,7 +15,9 @@ const Stories: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [imageFile, setImageFile] = useState<File | null>(null);
-  const [previewUrl, setPreviewUrl] = useState<string | null>(null); // Para ver la foto antes de subir
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [imageError, setImageError] = useState<string | null>(null);
+  const [confirmDelete, setConfirmDelete] = useState<{ id: string; imageUrl?: string } | null>(null);
   
   const [formData, setFormData] = useState({ 
     name: '', 
@@ -54,44 +58,51 @@ const Stories: React.FC = () => {
     if (file) {
       // Validar tamaño (5MB)
       if (file.size > 5 * 1024 * 1024) {
-        alert("La imagen es muy pesada. Por favor elige una de menos de 5MB.");
+        setImageError("La imagen es muy pesada. Por favor elige una de menos de 5MB.");
         e.target.value = "";
         return;
       }
+      setImageError(null);
       setImageFile(file);
-      setPreviewUrl(URL.createObjectURL(file)); // Generar previsualización
+      setPreviewUrl(URL.createObjectURL(file));
     } else {
       setImageFile(null);
       setPreviewUrl(null);
     }
   };
 
+  const compressToBlob = (file: File): Promise<Blob> =>
+    new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.readAsDataURL(file);
+      reader.onload = (event) => {
+        const img = new Image();
+        img.src = event.target?.result as string;
+        img.onload = () => {
+          const canvas = document.createElement('canvas');
+          const MAX_WIDTH = 800;
+          const scale = MAX_WIDTH / img.width;
+          canvas.width = MAX_WIDTH;
+          canvas.height = img.height * scale;
+          canvas.getContext('2d')?.drawImage(img, 0, 0, canvas.width, canvas.height);
+          canvas.toBlob((blob) => blob ? resolve(blob) : reject(new Error('Compresión fallida')), 'image/jpeg', 0.7);
+        };
+        img.onerror = reject;
+      };
+      reader.onerror = reject;
+    });
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setSaving(true);
     try {
-      let finalBase64 = "";
+      let imageUrl = "";
 
       if (imageFile) {
-        finalBase64 = await new Promise((resolve) => {
-          const reader = new FileReader();
-          reader.readAsDataURL(imageFile);
-          reader.onload = (event) => {
-            const img = new Image();
-            img.src = event.target?.result as string;
-            img.onload = () => {
-              const canvas = document.createElement('canvas');
-              const MAX_WIDTH = 800; 
-              const scaleSize = MAX_WIDTH / img.width;
-              canvas.width = MAX_WIDTH;
-              canvas.height = img.height * scaleSize;
-
-              const ctx = canvas.getContext('2d');
-              ctx?.drawImage(img, 0, 0, canvas.width, canvas.height);
-              resolve(canvas.toDataURL('image/jpeg', 0.7));
-            };
-          };
-        });
+        const blob = await compressToBlob(imageFile);
+        const storageRef = ref(storage, `stories/${Date.now()}_${imageFile.name}`);
+        await uploadBytes(storageRef, blob, { contentType: 'image/jpeg' });
+        imageUrl = await getDownloadURL(storageRef);
       }
 
       await addDoc(collection(db, 'stories'), {
@@ -99,7 +110,7 @@ const Stories: React.FC = () => {
         diagnosis: formData.diagnosis,
         testimony: formData.text,
         displayDate: formData.date,
-        imageUrl: finalBase64 
+        imageUrl,
       });
 
       setFormData({ name: '', diagnosis: '', text: '', date: '' });
@@ -107,19 +118,35 @@ const Stories: React.FC = () => {
       setPreviewUrl(null);
       fetchStories();
       showToast('Historia publicada');
-    } catch (e) { 
-      console.error("Error al guardar:", e); 
-    } finally { 
-      setSaving(false); 
+    } catch (e: any) {
+      console.error("Error al guardar:", e);
+      const msg: string = e?.code ?? e?.message ?? 'Error desconocido';
+      if (msg.includes('storage/unauthorized') || msg.includes('storage/unknown')) {
+        showToast("Error de Storage: verifica las reglas de Firebase.", 'error');
+      } else if (msg.includes('storage')) {
+        showToast(`Error al subir la imagen: ${msg}`, 'error');
+      } else {
+        showToast(`Error al guardar la historia: ${msg}`, 'error');
+      }
+    } finally {
+      setSaving(false);
     }
   };
 
-  const handleDelete = async (id: string) => {
-    if (window.confirm("¿Eliminar esta historia?")) {
-      await deleteDoc(doc(db, 'stories', id!));
-      fetchStories();
-      showToast('Historia eliminada');
+  const handleDelete = (id: string, imageUrl?: string) => {
+    setConfirmDelete({ id, imageUrl });
+  };
+
+  const confirmDeleteStory = async () => {
+    if (!confirmDelete) return;
+    const { id, imageUrl } = confirmDelete;
+    setConfirmDelete(null);
+    await deleteDoc(doc(db, 'stories', id));
+    if (imageUrl && imageUrl.startsWith('https://firebasestorage')) {
+      try { await deleteObject(ref(storage, imageUrl)); } catch { /* ya eliminado */ }
     }
+    fetchStories();
+    showToast('Historia eliminada');
   };
 
   const formatDisplayDate = (dateStr: string) => {
@@ -131,6 +158,13 @@ const Stories: React.FC = () => {
 
   return (
     <div className="p-8 space-y-8 bg-slate-50 min-h-screen font-sans">
+      {confirmDelete && (
+        <ConfirmModal
+          message="¿Eliminar esta historia? Esta acción no se puede deshacer."
+          onConfirm={confirmDeleteStory}
+          onCancel={() => setConfirmDelete(null)}
+        />
+      )}
       <div>
         <h1 className="text-3xl font-bold text-slate-800 uppercase tracking-tight">Historias que Inspiran</h1>
         <p className="text-slate-500 font-medium italic">Gestiona los testimonios con fotos reales de pacientes</p>
@@ -152,6 +186,7 @@ const Stories: React.FC = () => {
               <label className="text-[10px] font-bold text-slate-400 uppercase">Foto del Paciente</label>
               
               {/* Previsualización si existe imagen */}
+              {imageError && <p className="text-xs text-rose-500 mt-1 mb-1">{imageError}</p>}
               {previewUrl ? (
                 <div className="relative mt-1 mb-2 group">
                   <img src={previewUrl} className="w-full h-32 object-cover rounded-xl border border-slate-200" alt="Preview" />
@@ -222,7 +257,7 @@ const Stories: React.FC = () => {
                 </div>
               </div>
               {(isTI || permissions.stories.delete) && (
-                <button onClick={() => handleDelete(story.id!)} className="text-slate-200 hover:text-rose-500 transition-colors p-2">
+                <button onClick={() => handleDelete(story.id!, story.imageUrl)} className="text-slate-200 hover:text-rose-500 transition-colors p-2">
                   <Trash2 size={18} />
                 </button>
               )}

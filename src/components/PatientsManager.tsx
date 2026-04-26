@@ -6,6 +6,7 @@ import { collection, addDoc, doc, updateDoc, deleteDoc, onSnapshot, query, where
 import { useAuth } from '../context/AuthContext';
 import { useToast } from '../context/ToastContext';
 import useEscKey from '../hooks/useEscKey';
+import ConfirmModal from './ConfirmModal';
 
 const PatientsManager: React.FC = () => {
   const { isTI, permissions } = useAuth();
@@ -15,6 +16,7 @@ const PatientsManager: React.FC = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [currentPatient, setCurrentPatient] = useState<Partial<Patient>>({});
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   useEscKey(() => setIsModalOpen(false), isModalOpen);
 
   useEffect(() => {
@@ -83,18 +85,22 @@ const PatientsManager: React.FC = () => {
       showToast();
     } catch (error) {
       console.error("Error en Firebase:", error);
-      alert("Error al procesar la solicitud");
+      showToast("Error al procesar la solicitud", 'error');
     }
   };
 
-  const handleDelete = async (id: string) => {
-    if (window.confirm('¿Estás seguro de eliminar este paciente?')) {
-      try {
-        await deleteDoc(doc(db, "patients", id));
-        showToast('Paciente eliminado');
-      } catch (error) {
-        console.error("Error al eliminar:", error);
-      }
+  const handleDelete = (id: string) => setConfirmDeleteId(id);
+
+  const confirmDeletePatient = async () => {
+    if (!confirmDeleteId) return;
+    const id = confirmDeleteId;
+    setConfirmDeleteId(null);
+    try {
+      await deleteDoc(doc(db, "patients", id));
+      showToast('Paciente eliminado');
+    } catch (error) {
+      console.error("Error al eliminar:", error);
+      showToast('Error al eliminar el paciente', 'error');
     }
   };
 
@@ -104,6 +110,13 @@ const PatientsManager: React.FC = () => {
 
   return (
     <div className="space-y-6">
+      {confirmDeleteId && (
+        <ConfirmModal
+          message="¿Eliminar este paciente? Esta acción no se puede deshacer."
+          onConfirm={confirmDeletePatient}
+          onCancel={() => setConfirmDeleteId(null)}
+        />
+      )}
       <div className="flex justify-between items-center">
         <div>
           <h1 className="text-2xl font-bold text-slate-800">Pacientes</h1>

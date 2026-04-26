@@ -7,6 +7,7 @@ import { collection, onSnapshot, addDoc, deleteDoc, doc, updateDoc } from 'fireb
 import { useAuth } from '../context/AuthContext';
 import { useToast } from '../context/ToastContext';
 import useEscKey from '../hooks/useEscKey';
+import ConfirmModal from './ConfirmModal';
 
 const SessionsManager: React.FC = () => {
   const { isTI, permissions } = useAuth();
@@ -15,7 +16,9 @@ const SessionsManager: React.FC = () => {
   const [patients, setPatients] = useState<Patient[]>([]);
   const [professionals, setProfessionals] = useState<Professional[]>([]);
   const [isModalOpen, setIsModalOpen] = useState(false);
-  useEscKey(() => setIsModalOpen(false), isModalOpen);
+  const [formError, setFormError] = useState<string | null>(null);
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+  useEscKey(() => { setIsModalOpen(false); setFormError(null); }, isModalOpen);
 
   const [newSession, setNewSession] = useState({
     patientId: '',
@@ -60,17 +63,18 @@ const SessionsManager: React.FC = () => {
   const handleAdd = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newSession.patientId || !newSession.professionalId) {
-      alert("Por favor selecciona un paciente y un profesional");
+      setFormError("Por favor selecciona un paciente y un profesional.");
       return;
     }
     if (!newSession.date) {
-      alert("Por favor selecciona una fecha para la cita");
+      setFormError("Por favor selecciona una fecha para la cita.");
       return;
     }
     if (!newSession.time) {
-      alert("Por favor selecciona una hora para la cita");
+      setFormError("Por favor selecciona una hora para la cita.");
       return;
     }
+    setFormError(null);
 
     try {
       await addDoc(collection(db, 'sessions'), newSession);
@@ -91,15 +95,18 @@ const SessionsManager: React.FC = () => {
       showToast();
     } catch (error) {
       console.error("Error al actualizar estado:", error);
-      alert("No se pudo actualizar el estado. Verifica tu conexión e inténtalo de nuevo.");
+      showToast("No se pudo actualizar el estado. Verifica tu conexión.", 'error');
     }
   };
 
-  const handleDelete = async (id: string) => {
-    if (window.confirm('¿Eliminar esta cita?')) {
-      await deleteDoc(doc(db, 'sessions', id));
-      showToast('Cita eliminada');
-    }
+  const handleDelete = (id: string) => setConfirmDeleteId(id);
+
+  const confirmDeleteSession = async () => {
+    if (!confirmDeleteId) return;
+    const id = confirmDeleteId;
+    setConfirmDeleteId(null);
+    await deleteDoc(doc(db, 'sessions', id));
+    showToast('Cita eliminada');
   };
 
   const getPatientName = (id: string) => patients.find(p => p.id === id)?.name || 'Paciente no encontrado';
@@ -107,6 +114,13 @@ const SessionsManager: React.FC = () => {
 
   return (
     <div className="space-y-6">
+      {confirmDeleteId && (
+        <ConfirmModal
+          message="¿Eliminar esta cita? Esta acción no se puede deshacer."
+          onConfirm={confirmDeleteSession}
+          onCancel={() => setConfirmDeleteId(null)}
+        />
+      )}
       <div className="flex justify-between items-center">
         <div>
           <h2 className="text-2xl font-bold text-slate-800 uppercase tracking-tight">Agenda de Sesiones</h2>
@@ -248,8 +262,9 @@ const SessionsManager: React.FC = () => {
                 className="w-full p-3 rounded-xl border border-slate-200 h-24 outline-none focus:ring-2 focus:ring-indigo-500"
                 onChange={e => setNewSession({...newSession, notes: e.target.value})}
               />
+              {formError && <p className="text-xs text-rose-500 font-medium">{formError}</p>}
               <div className="flex gap-3 pt-4">
-                <button type="button" onClick={() => setIsModalOpen(false)} className="flex-1 py-3 text-slate-500 font-bold">Cancelar</button>
+                <button type="button" onClick={() => { setIsModalOpen(false); setFormError(null); }} className="flex-1 py-3 text-slate-500 font-bold">Cancelar</button>
                 <button type="submit" className="flex-1 py-3 bg-indigo-600 text-white rounded-xl font-bold shadow-lg shadow-indigo-100">Agendar</button>
               </div>
             </form>

@@ -9,7 +9,7 @@ import {
   Menu,
   X,
   ChevronRight,
-  Sparkles,
+  Activity,
   LogOut,
   BookOpen,
   KeyRound,
@@ -78,7 +78,7 @@ const App: React.FC = () => {
                 <aside className={`${isSidebarOpen ? 'w-64' : 'w-20'} bg-white border-r border-slate-200 transition-all duration-300 flex flex-col z-20`}>
                   <div className="p-6 flex items-center gap-3">
                     <div className="bg-blue-600 p-2 rounded-lg text-white">
-                      <span className="shrink-0"><Sparkles size={24} /></span>
+                      <span className="shrink-0"><Activity size={24} /></span>
                     </div>
                     {isSidebarOpen && <span className="font-bold text-xl text-slate-800 uppercase tracking-tight">FISIOTERAPI</span>}
                   </div>

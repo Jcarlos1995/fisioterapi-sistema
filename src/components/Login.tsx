@@ -34,6 +34,8 @@ const Login: React.FC = () => {
       } else {
         setError('Error al iniciar sesión. Intenta de nuevo.');
       }
+      // Limpiar la contraseña por seguridad tras un intento fallido
+      setPassword('');
     } finally {
       setLoading(false);
     }

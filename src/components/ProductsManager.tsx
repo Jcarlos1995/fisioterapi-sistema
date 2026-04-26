@@ -6,12 +6,14 @@ import { collection, onSnapshot, addDoc, deleteDoc, doc, updateDoc } from 'fireb
 import { useAuth } from '../context/AuthContext';
 import { useToast } from '../context/ToastContext';
 import useEscKey from '../hooks/useEscKey';
+import ConfirmModal from './ConfirmModal';
 
 const ProductsManager: React.FC = () => {
   const { isTI, permissions } = useAuth();
   const { showToast } = useToast();
   const [products, setProducts] = useState<Product[]>([]);
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   useEscKey(() => setIsModalOpen(false), isModalOpen);
   const [newProduct, setNewProduct] = useState({
     name: '',
@@ -62,15 +64,25 @@ const ProductsManager: React.FC = () => {
     }
   };
 
-  const handleDelete = async (id: string) => {
-    if (window.confirm('¿Eliminar este producto?')) {
-      await deleteDoc(doc(db, 'products', id));
-      showToast('Producto eliminado');
-    }
+  const handleDelete = (id: string) => setConfirmDeleteId(id);
+
+  const confirmDeleteProduct = async () => {
+    if (!confirmDeleteId) return;
+    const id = confirmDeleteId;
+    setConfirmDeleteId(null);
+    await deleteDoc(doc(db, 'products', id));
+    showToast('Producto eliminado');
   };
 
   return (
     <div className="space-y-6">
+      {confirmDeleteId && (
+        <ConfirmModal
+          message="¿Eliminar este producto? Esta acción no se puede deshacer."
+          onConfirm={confirmDeleteProduct}
+          onCancel={() => setConfirmDeleteId(null)}
+        />
+      )}
       <div className="flex justify-between items-center">
         <div>
           <h2 className="text-2xl font-bold text-slate-800">Inventario</h2>
