@@ -180,6 +180,7 @@ const SessionsManager: React.FC = () => {
               <div className="flex items-center gap-3">
                 {!(isTI || permissions.appointments.edit) ? (
                   <span className={`text-xs font-bold px-3 py-1.5 rounded-full shadow-sm ${
+                    session.status === 'Cancelada' ? 'bg-rose-100 text-rose-700' :
                     session.status === 'Pagada'    ? 'bg-emerald-100 text-emerald-700' :
                     session.status === 'Efectuada' ? 'bg-green-100 text-green-700' :
                     session.status === 'Confirmada'? 'bg-blue-100 text-blue-700' :
@@ -192,6 +193,7 @@ const SessionsManager: React.FC = () => {
                     value={session.status}
                     onChange={(e) => updateStatus(session.id, e.target.value as Session['status'])}
                     className={`text-xs font-bold px-3 py-1.5 rounded-full border-none cursor-pointer shadow-sm ${
+                      session.status === 'Cancelada' ? 'bg-rose-100 text-rose-700' :
                       session.status === 'Pagada'    ? 'bg-emerald-100 text-emerald-700' :
                       session.status === 'Efectuada' ? 'bg-green-100 text-green-700' :
                       session.status === 'Confirmada'? 'bg-blue-100 text-blue-700' :
@@ -202,6 +204,7 @@ const SessionsManager: React.FC = () => {
                     <option value="Confirmada">Confirmada</option>
                     <option value="Efectuada">Efectuada</option>
                     <option value="Pagada">Pagada</option>
+                    <option value="Cancelada">Cancelada</option>
                   </select>
                 )}
                 {(isTI || permissions.appointments.delete) && (

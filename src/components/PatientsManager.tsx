@@ -240,6 +240,13 @@ const PatientsManager: React.FC = () => {
                 />
               </div>
 
+              <input
+                type="date"
+                className="w-full px-4 py-2 border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-blue-600"
+                value={currentPatient.birthDate || ''}
+                onChange={(e) => setCurrentPatient({ ...currentPatient, birthDate: e.target.value })}
+              />
+
               <input 
                 placeholder="Teléfono"
                 required

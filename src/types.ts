@@ -43,6 +43,7 @@ export interface Patient {
   name: string;
   email: string;
   dni: string;
+  birthDate?: string;
   age: number;
   phone: string;
   professionalId?: string;
@@ -56,7 +57,7 @@ export interface Session {
   date: string;
   time: string;
   therapyType: string;
-  status: 'Programada' | 'Confirmada' | 'Efectuada' | 'Pagada';
+  status: 'Programada' | 'Confirmada' | 'Efectuada' | 'Pagada' | 'Cancelada';
   notes?: string;
   // Campos adicionales escritos por BookingSystem (reservas online)
   type?: 'online-booking';
@@ -64,7 +65,7 @@ export interface Session {
   createdAt?: string;
 }
 
-export type SessionStatus = 'Programada' | 'Confirmada' | 'Efectuada' | 'Pagada';
+export type SessionStatus = 'Programada' | 'Confirmada' | 'Efectuada' | 'Pagada' | 'Cancelada';
 
 export type TherapyType = 'Fisioterapia' | 'Quiropraxia' | 'Masajes' | 'Terapia de Temporada' | 'Medicina General' | 'Otros';
 
