@@ -394,6 +394,8 @@ interface PatientSession {
   id: string;
   date?: string;
   time?: string;
+  professionalId?: string;
+  professionalName?: string;
   [key: string]: unknown;
 }
 
@@ -496,7 +498,33 @@ export const getPatientAppointments = onCall(
         return aDate.localeCompare(bDate);
       });
 
-    return { sessions };
+    const professionalIds = Array.from(
+      new Set(
+        sessions
+          .map((session) => String(session.professionalId || '').trim())
+          .filter((id) => Boolean(id))
+      )
+    );
+
+    const professionalEntries = await Promise.all(
+      professionalIds.map(async (professionalId) => {
+        const professionalSnap = await db.collection('professionals').doc(professionalId).get();
+        const professionalName = professionalSnap.exists
+          ? String((professionalSnap.data() as { name?: string }).name || 'No asignado')
+          : 'No asignado';
+        return [professionalId, professionalName] as const;
+      })
+    );
+    const professionalMap = new Map<string, string>(professionalEntries);
+
+    const sessionsWithNames = sessions.map((session) => ({
+      ...session,
+      professionalName: session.professionalId
+        ? professionalMap.get(String(session.professionalId)) || 'No asignado'
+        : 'No asignado',
+    }));
+
+    return { sessions: sessionsWithNames };
   }
 );
 

@@ -29,6 +29,8 @@ import SessionsManager from './components/SessionsManager';
 import BookingSystem from './components/BookingSystem';
 import Stories from './components/Stories';
 import ChangePasswordModal from './components/ChangePasswordModal';
+import PatientPortal from './components/portal/PatientPortal';
+import { PatientAuthProvider } from './context/PatientAuthContext';
 
 const App: React.FC = () => {
   const { user, loading } = useAuth();
@@ -65,6 +67,14 @@ const App: React.FC = () => {
       <Routes>
         {/* RUTA PÚBLICA */}
         <Route path="/agendar" element={<BookingSystem />} />
+        <Route
+          path="/portal"
+          element={
+            <PatientAuthProvider>
+              <PatientPortal />
+            </PatientAuthProvider>
+          }
+        />
 
         {/* RUTAS PROTEGIDAS */}
         <Route 
