@@ -240,6 +240,7 @@ interface BookingInput {
   email:       string;
   dni:         string;
   age:         string;
+  birthDate?:  string;
   therapyType: string;
   startStr:    string;
   endStr:      string;
@@ -291,8 +292,9 @@ export const createBooking = onCall(
     const ip = request.rawRequest.ip ?? "unknown";
     await checkIpRateLimit(ip);
 
-    const { name, phone, email, dni, age, therapyType, startStr, endStr } =
+    const { name, phone, email, dni, age, birthDate, therapyType, startStr, endStr } =
       request.data as BookingInput;
+    const cleanBirthDate = (birthDate || "").trim();
 
     // Validación básica de campos requeridos
     if (!name?.trim() || !phone?.trim() || !email?.trim() || !dni?.trim() || !startStr) {
@@ -331,12 +333,18 @@ export const createBooking = onCall(
         );
       }
 
-      await db.collection("patients").doc(patientId).update({
+      const existingPatient = patientSnap.docs[0].data() as { birthDate?: string };
+      const updatePayload: Record<string, unknown> = {
         name:  name.trim(),
         email: email.trim(),
         phone: phone.trim(),
         age:   parseInt(age) || 0,
-      });
+      };
+      // Solo completar birthDate si el paciente no tenía uno registrado
+      if (cleanBirthDate && !existingPatient.birthDate) {
+        updatePayload.birthDate = cleanBirthDate;
+      }
+      await db.collection("patients").doc(patientId).update(updatePayload);
     } else {
       const newPatient = await db.collection("patients").add({
         name:           name.trim(),
@@ -344,6 +352,7 @@ export const createBooking = onCall(
         phone:          phone.trim(),
         dni:            cleanDni,
         age:            parseInt(age) || 0,
+        ...(cleanBirthDate ? { birthDate: cleanBirthDate } : {}),
         professionalId: "",
         createdAt:      new Date().toISOString(),
       });

@@ -22,6 +22,7 @@ const BookingSystem: React.FC = () => {
     email: '',
     dni: '',
     age: '',
+    birthDate: '',
     therapyType: 'Fisioterapia'
   });
 
@@ -171,6 +172,7 @@ const BookingSystem: React.FC = () => {
         email:       formData.email,
         dni:         formData.dni,
         age:         formData.age,
+        birthDate:   formData.birthDate,
         therapyType: formData.therapyType,
         startStr:    selectedSlot.startStr,
         endStr:      selectedSlot.endStr,
@@ -216,6 +218,7 @@ const BookingSystem: React.FC = () => {
         <h2>Datos del Agendamiento</h2>
         <div class="row"><span class="label">Paciente</span><span class="value">${formData.name}</span></div>
         <div class="row"><span class="label">DNI</span><span class="value">${formData.dni}</span></div>
+        <div class="row"><span class="label">Fecha de Nacimiento</span><span class="value">${formData.birthDate}</span></div>
         <div class="row"><span class="label">Teléfono</span><span class="value">${formData.phone}</span></div>
         <div class="row"><span class="label">Email</span><span class="value">${formData.email}</span></div>
         <div class="row"><span class="label">Servicio</span><span class="value">${formData.therapyType}</span></div>
@@ -262,10 +265,11 @@ const BookingSystem: React.FC = () => {
               </div>
               <div className="p-6 space-y-3">
                 {[
-                  { label: 'Paciente',    value: formData.name },
-                  { label: 'DNI',         value: formData.dni },
-                  { label: 'Teléfono',    value: formData.phone },
-                  { label: 'Email',       value: formData.email },
+                  { label: 'Paciente',           value: formData.name },
+                  { label: 'DNI',                value: formData.dni },
+                  { label: 'Fecha de Nacimiento', value: formData.birthDate },
+                  { label: 'Teléfono',           value: formData.phone },
+                  { label: 'Email',              value: formData.email },
                   { label: 'Servicio',    value: formData.therapyType },
                   { label: 'Fecha y Hora', value: selectedSlot ? new Date(selectedSlot.startStr).toLocaleString('es-ES', { dateStyle: 'full', timeStyle: 'short' }) : '—' },
                   { label: 'Estado',      value: '✓ Programada' },
@@ -396,14 +400,26 @@ const BookingSystem: React.FC = () => {
                   <div className="grid grid-cols-2 gap-2">
                     <div>
                       <label className="text-[10px] font-bold text-slate-400 uppercase">DNI</label>
-                      <input required className="w-full px-3 py-2 border rounded-xl outline-none focus:ring-2 focus:ring-blue-500" 
+                      <input required className="w-full px-3 py-2 border rounded-xl outline-none focus:ring-2 focus:ring-blue-500"
                         value={formData.dni} onChange={e => setFormData({...formData, dni: e.target.value})} />
                     </div>
                     <div>
                       <label className="text-[10px] font-bold text-slate-400 uppercase">Edad</label>
-                      <input required type="number" className="w-full px-3 py-2 border rounded-xl outline-none focus:ring-2 focus:ring-blue-500" 
+                      <input required type="number" className="w-full px-3 py-2 border rounded-xl outline-none focus:ring-2 focus:ring-blue-500"
                         value={formData.age} onChange={e => setFormData({...formData, age: e.target.value})} />
                     </div>
+                  </div>
+
+                  <div>
+                    <label className="text-[10px] font-bold text-slate-400 uppercase">Fecha de Nacimiento</label>
+                    <p className="text-[10px] text-slate-400 mb-1">Necesaria para acceder a tu portal de paciente.</p>
+                    <input
+                      required
+                      type="date"
+                      className="w-full px-3 py-2 border rounded-xl outline-none focus:ring-2 focus:ring-blue-500"
+                      value={formData.birthDate}
+                      onChange={e => setFormData({...formData, birthDate: e.target.value})}
+                    />
                   </div>
 
                   <div>
