@@ -46,12 +46,17 @@ const PatientAppointmentCard: React.FC<PatientAppointmentCardProps> = ({
           <button
             type="button"
             onClick={() => onCancel(session)}
-            className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-sm font-semibold transition-colors"
+            className={`w-full sm:w-auto inline-flex items-center justify-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold transition-colors ${
+              cancelInfo?.allowed
+                ? 'bg-rose-600 hover:bg-rose-700 text-white cursor-pointer'
+                : 'bg-slate-200 text-slate-400 cursor-not-allowed'
+            }`}
+            title={cancelInfo?.allowed ? 'Cancelar esta cita' : cancelInfo?.message}
           >
             <Stethoscope size={15} />
             Cancelar cita
           </button>
-          {cancelInfo?.message && (
+          {!cancelInfo?.allowed && cancelInfo?.message && (
             <p className="text-xs text-amber-600 mt-2">{cancelInfo.message}</p>
           )}
         </div>

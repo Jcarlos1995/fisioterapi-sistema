@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import {
-  Users, UserSquare2, Package, Sparkles, BrainCircuit,
+  Users, UserSquare2, Package, BrainCircuit,
   Activity, Calendar, ClipboardList, AlertTriangle, X, BellRing, ArrowRight, CheckCheck,
 } from 'lucide-react';
 import { auth, db } from '../firebaseConfig';
@@ -175,7 +175,7 @@ const Dashboard: React.FC = () => {
             <ClipboardList size={16} /> Exportar
           </button>
           <button onClick={generateAnalysis} className="bg-blue-600 text-white px-4 py-2 rounded-lg flex items-center gap-2 font-bold shadow-md hover:bg-blue-700 transition-all">
-            <Sparkles size={16} /> {loadingIA ? "Analizando..." : "Análisis IA"}
+            <BrainCircuit size={16} /> {loadingIA ? "Analizando..." : "Análisis IA"}
           </button>
         </div>
       </div>

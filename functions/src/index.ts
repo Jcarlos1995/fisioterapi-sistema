@@ -385,9 +385,22 @@ interface ValidatePatientLoginInput {
   birthDate: string;
 }
 
+interface PatientLoginRateLimitState {
+  failedAttempts: number;
+  blockedUntil: number;
+}
+
 interface GetPatientAppointmentsInput {
   patientId: string;
   dni: string;
+}
+
+interface PortalProduct {
+  id: string;
+  name: string;
+  category?: string;
+  price?: number;
+  stock?: number;
 }
 
 interface PatientSession {
@@ -406,6 +419,15 @@ interface CancelPatientBookingInput {
   reason?: string;
 }
 
+interface RegisterPatientPortalInput {
+  name: string;
+  dni: string;
+  birthDate: string;
+  age: number;
+  phone: string;
+  email: string;
+}
+
 export const validatePatientLogin = onCall(
   {
     region: "us-central1",
@@ -414,7 +436,20 @@ export const validatePatientLogin = onCall(
   },
   async (request) => {
     const ip = request.rawRequest.ip ?? "unknown";
-    await checkIpRateLimitInCollection(ip, "patientLoginRateLimits");
+    const rateLimitRef = db.collection("patientLoginRateLimits").doc(ip.replace(/[:.]/g, "_"));
+    const now = Date.now();
+
+    const rateLimitSnap = await rateLimitRef.get();
+    const currentRateLimit = rateLimitSnap.exists
+      ? (rateLimitSnap.data() as PatientLoginRateLimitState)
+      : { failedAttempts: 0, blockedUntil: 0 };
+
+    if ((currentRateLimit.blockedUntil || 0) > now) {
+      throw new HttpsError(
+        "resource-exhausted",
+        "Demasiados intentos. Intenta nuevamente cuando finalice el bloqueo temporal."
+      );
+    }
 
     const { dni, birthDate } = request.data as ValidatePatientLoginInput;
     const cleanDni = (dni || "").trim().toUpperCase();
@@ -431,7 +466,19 @@ export const validatePatientLogin = onCall(
       .get();
 
     if (patientSnap.empty) {
-      throw new HttpsError("not-found", "No se encontró el paciente.");
+      const nextFailedAttempts = (currentRateLimit.failedAttempts || 0) + 1;
+      const blockedUntil =
+        nextFailedAttempts >= 8
+          ? now + 30 * 60 * 1000
+          : nextFailedAttempts >= 6
+            ? now + 5 * 60 * 1000
+            : 0;
+
+      await rateLimitRef.set(
+        { failedAttempts: nextFailedAttempts, blockedUntil },
+        { merge: true }
+      );
+      throw new HttpsError("not-found", "No encontramos tu DNI. Puedes registrarte ahora.");
     }
 
     const patientDoc = patientSnap.docs[0];
@@ -442,9 +489,42 @@ export const validatePatientLogin = onCall(
       birthDate?: string;
     };
 
-    if (!patient.birthDate || patient.birthDate !== cleanBirthDate) {
+    if (!patient.birthDate) {
+      const nextFailedAttempts = (currentRateLimit.failedAttempts || 0) + 1;
+      const blockedUntil =
+        nextFailedAttempts >= 8
+          ? now + 30 * 60 * 1000
+          : nextFailedAttempts >= 6
+            ? now + 5 * 60 * 1000
+            : 0;
+
+      await rateLimitRef.set(
+        { failedAttempts: nextFailedAttempts, blockedUntil },
+        { merge: true }
+      );
+      throw new HttpsError(
+        "failed-precondition",
+        "Aún no tenemos tu fecha de nacimiento registrada. Acércate a recepción para activar tu portal."
+      );
+    }
+
+    if (patient.birthDate !== cleanBirthDate) {
+      const nextFailedAttempts = (currentRateLimit.failedAttempts || 0) + 1;
+      const blockedUntil =
+        nextFailedAttempts >= 8
+          ? now + 30 * 60 * 1000
+          : nextFailedAttempts >= 6
+            ? now + 5 * 60 * 1000
+            : 0;
+
+      await rateLimitRef.set(
+        { failedAttempts: nextFailedAttempts, blockedUntil },
+        { merge: true }
+      );
       throw new HttpsError("not-found", "No se encontró el paciente.");
     }
+
+    await rateLimitRef.set({ failedAttempts: 0, blockedUntil: 0 }, { merge: true });
 
     return {
       patient: {
@@ -455,6 +535,70 @@ export const validatePatientLogin = onCall(
         birthDate: patient.birthDate,
       },
     };
+  }
+);
+
+export const registerPatientPortal = onCall(
+  {
+    region: "us-central1",
+    timeoutSeconds: 20,
+    cors: true,
+  },
+  async (request) => {
+    const { name, dni, birthDate, age, phone, email } = request.data as RegisterPatientPortalInput;
+    const cleanName = (name || "").trim();
+    const cleanDni = (dni || "").trim().toUpperCase();
+    const cleanBirthDate = (birthDate || "").trim();
+    const parsedAge = Number(age);
+    const cleanPhone = (phone || "").trim();
+    const cleanEmail = (email || "").trim().toLowerCase();
+
+    if (!cleanName || !cleanDni || !cleanBirthDate || !cleanPhone || !cleanEmail || !Number.isFinite(parsedAge)) {
+      throw new HttpsError("invalid-argument", "Todos los campos son obligatorios.");
+    }
+
+    if (!/^\d{8}$/.test(cleanDni)) {
+      throw new HttpsError("invalid-argument", "El DNI debe tener 8 dígitos.");
+    }
+
+    const existing = await db
+      .collection("patients")
+      .where("dni", "==", cleanDni)
+      .limit(1)
+      .get();
+
+    if (!existing.empty) {
+      throw new HttpsError("already-exists", "Este DNI ya está registrado.");
+    }
+
+    const created = await db.collection("patients").add({
+      name: cleanName,
+      dni: cleanDni,
+      birthDate: cleanBirthDate,
+      phone: cleanPhone,
+      email: cleanEmail,
+      age: parsedAge,
+      professionalId: "",
+      createdAt: new Date().toISOString(),
+    });
+
+    return { success: true, patientId: created.id };
+  }
+);
+
+export const getPatientProducts = onCall(
+  {
+    region: "us-central1",
+    timeoutSeconds: 15,
+    cors: true,
+  },
+  async () => {
+    const productsSnap = await db.collection("products").get();
+    const products: PortalProduct[] = productsSnap.docs
+      .map((docSnap) => ({ id: docSnap.id, ...docSnap.data() } as PortalProduct))
+      .sort((a, b) => String(a.name || "").localeCompare(String(b.name || "")));
+
+    return { products };
   }
 );
 
