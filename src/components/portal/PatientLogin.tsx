@@ -3,6 +3,7 @@ import { UserCircle } from 'lucide-react';
 import { BOOKING_URL, LANDING_URL } from '../../config';
 import { useToast } from '../../context/ToastContext';
 import { usePatientAuth } from '../../context/PatientAuthContext';
+import { validateBirthDate, validateDni } from '../../utils/validation';
 
 interface PatientLoginProps {
   onSuccess: () => void;
@@ -18,14 +19,16 @@ const PatientLogin: React.FC<PatientLoginProps> = ({ onSuccess }) => {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     const cleanDni = dni.trim();
+    const dniValidation = validateDni(cleanDni);
+    const birthValidation = validateBirthDate(birthDate);
 
-    if (!/^\d{8}$/.test(cleanDni)) {
-      showToast('El DNI debe tener 8 dígitos numéricos.', 'error');
+    if (!dniValidation.valid) {
+      showToast(dniValidation.error || 'DNI inválido.', 'error');
       return;
     }
 
-    if (!birthDate) {
-      showToast('La fecha de nacimiento es obligatoria.', 'error');
+    if (!birthValidation.valid) {
+      showToast(birthValidation.error || 'Fecha de nacimiento inválida.', 'error');
       return;
     }
 

@@ -6,6 +6,7 @@ import { collection, addDoc, doc, updateDoc, deleteDoc, onSnapshot, query, where
 import { useAuth } from '../context/AuthContext';
 import { useToast } from '../context/ToastContext';
 import useEscKey from '../hooks/useEscKey';
+import { validateBirthDate } from '../utils/validation';
 import ConfirmModal from './ConfirmModal';
 
 const PatientsManager: React.FC = () => {
@@ -51,6 +52,14 @@ const PatientsManager: React.FC = () => {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
+      if (currentPatient.birthDate) {
+        const birthDateValidation = validateBirthDate(currentPatient.birthDate);
+        if (!birthDateValidation.valid) {
+          showToast(birthDateValidation.error || 'Fecha de nacimiento inválida.', 'error');
+          return;
+        }
+      }
+
       if (currentPatient.id) {
         // 1. Actualizar los datos del paciente sin enviar el campo id
         const { id: _id, createdAt: _createdAt, ...patientData } = currentPatient as Patient;

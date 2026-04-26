@@ -4,6 +4,7 @@ import { functions } from '../../firebaseConfig';
 import { useToast } from '../../context/ToastContext';
 import { usePatientAppointments } from '../../hooks/usePatientAppointments';
 import { PatientPortalSession } from '../../hooks/usePatientAppointments';
+import { getCancellationEligibility } from '../../utils/cancellation';
 import { PortalPatient } from './types';
 import CancelAppointmentModal from './CancelAppointmentModal';
 import PatientAppointmentCard from './PatientAppointmentCard';
@@ -29,25 +30,8 @@ const getSessionDateMs = (session: PatientPortalSession) => {
 };
 
 const getCancelInfo = (session: PatientPortalSession): { allowed: boolean; message?: string } => {
-  if (session.status !== 'Programada' && session.status !== 'Confirmada') {
-    return { allowed: false, message: 'Esta cita ya no admite cancelación.' };
-  }
-
-  const now = Date.now();
-  const appointmentMs = getSessionDateMs(session);
-  const minAdvanceMs = 2 * 60 * 60 * 1000;
-  const diffMs = appointmentMs - now;
-
-  if (appointmentMs <= now) {
-    return { allowed: false, message: 'Solo puedes cancelar citas futuras.' };
-  }
-  if (diffMs < minAdvanceMs) {
-    return {
-      allowed: false,
-      message: 'Las cancelaciones requieren mínimo 2 horas de anticipación. Llama a la clínica.',
-    };
-  }
-  return { allowed: true };
+  const eligibility = getCancellationEligibility(session.status, session.date, session.time);
+  return { allowed: eligibility.cancelable, message: eligibility.message };
 };
 
 const PatientAppointmentsList: React.FC<PatientAppointmentsListProps> = ({ patient }) => {
