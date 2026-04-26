@@ -1,13 +1,27 @@
 import React, { useState } from 'react';
-import { ArrowLeft, UserCircle } from 'lucide-react';
+import { httpsCallable } from 'firebase/functions';
+import { ArrowLeft } from 'lucide-react';
+import logoFisioterapia from '../../assets/logo-fisioterapia.png';
 import { BOOKING_URL, LANDING_URL } from '../../config';
+import { functions } from '../../firebaseConfig';
 import { useToast } from '../../context/ToastContext';
 import { usePatientAuth } from '../../context/PatientAuthContext';
 import { validateBirthDate, validateDni } from '../../utils/validation';
+import RegisterPatientModal from './RegisterPatientModal';
 
 interface PatientLoginProps {
   onSuccess: () => void;
 }
+
+interface RegisterPatientPortalResponse {
+  success: boolean;
+  patientId: string;
+}
+
+const registerPatientPortalCallable = httpsCallable<
+  { name: string; dni: string; birthDate: string; age: number; phone: string; email: string },
+  RegisterPatientPortalResponse
+>(functions, 'registerPatientPortal');
 
 const PatientLogin: React.FC<PatientLoginProps> = ({ onSuccess }) => {
   const { showToast } = useToast();
@@ -15,6 +29,7 @@ const PatientLogin: React.FC<PatientLoginProps> = ({ onSuccess }) => {
   const [dni, setDni] = useState('');
   const [birthDate, setBirthDate] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const [showRegisterModal, setShowRegisterModal] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -39,10 +54,21 @@ const PatientLogin: React.FC<PatientLoginProps> = ({ onSuccess }) => {
       onSuccess();
     } catch (error: unknown) {
       const code = (error as { code?: string })?.code ?? '';
+      const message = (error as { message?: string })?.message ?? '';
       if (code.includes('resource-exhausted')) {
-        showToast('Demasiados intentos. Espera una hora para volver a intentar.', 'warning');
+        showToast('Demasiados intentos. Tienes un bloqueo temporal por seguridad.', 'warning');
+      } else if (code.includes('failed-precondition')) {
+        showToast(
+          'Aún no tenemos tu fecha de nacimiento registrada. Acércate a recepción para activar tu portal.',
+          'warning'
+        );
       } else if (code.includes('not-found')) {
-        showToast('Los datos no coinciden.', 'error');
+        if (message.toLowerCase().includes('no encontramos tu dni')) {
+          showToast('No encontramos tu DNI. Puedes registrarte ahora.', 'warning');
+          setShowRegisterModal(true);
+        } else {
+          showToast('Los datos no coinciden.', 'error');
+        }
       } else {
         showToast('No pudimos validar tus datos. Intenta nuevamente.', 'error');
       }
@@ -63,9 +89,7 @@ const PatientLogin: React.FC<PatientLoginProps> = ({ onSuccess }) => {
 
       <div className="w-full max-w-md bg-white border border-slate-200 rounded-3xl shadow-xl p-6 sm:p-8">
         <div className="text-center mb-6">
-          <div className="w-14 h-14 rounded-2xl bg-blue-100 text-blue-600 mx-auto flex items-center justify-center mb-3">
-            <UserCircle size={30} />
-          </div>
+          <img src={logoFisioterapia} alt="Fisioterapi Chepén" className="h-24 w-auto mx-auto object-contain mb-3" />
           <h1 className="text-2xl font-bold text-slate-800">Mi Portal de Paciente</h1>
           <p className="text-slate-500 text-sm mt-1">Ingresa con tu DNI y fecha de nacimiento</p>
         </div>
@@ -109,6 +133,30 @@ const PatientLogin: React.FC<PatientLoginProps> = ({ onSuccess }) => {
           
         </div>
       </div>
+
+      {showRegisterModal && (
+        <RegisterPatientModal
+          initialDni={dni}
+          initialBirthDate={birthDate}
+          onClose={() => setShowRegisterModal(false)}
+          onSubmit={async (payload) => {
+            try {
+              await registerPatientPortalCallable(payload);
+              showToast('Registro exitoso. Ahora puedes ingresar con tu DNI y fecha de nacimiento.');
+              setDni(payload.dni);
+              setBirthDate(payload.birthDate);
+            } catch (error: unknown) {
+              const code = (error as { code?: string })?.code ?? '';
+              if (code.includes('already-exists')) {
+                showToast('Este DNI ya existe. Verifica tus datos e intenta iniciar sesión.', 'warning');
+              } else {
+                showToast('No se pudo completar el registro. Intenta nuevamente.', 'error');
+              }
+              throw error;
+            }
+          }}
+        />
+      )}
     </div>
   );
 };
