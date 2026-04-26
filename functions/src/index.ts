@@ -672,6 +672,99 @@ export const getPatientAppointments = onCall(
   }
 );
 
+// ─── Notificación WhatsApp de separado de productos ──────────────────────────
+interface ReservationItem {
+  productId: string;
+  name:      string;
+  qty:       number;
+  price:     number;
+}
+
+interface ProductReservationNotification {
+  items:       ReservationItem[];
+  patientName: string;
+  patientDni:  string;
+  patientPhone: string;
+}
+
+async function sendProductReservationWhatsApp(
+  data: ProductReservationNotification
+): Promise<void> {
+  const apiKey = process.env.CALLMEBOT_API_KEY;
+  if (!apiKey) {
+    console.warn("CALLMEBOT_API_KEY no configurada — notificación de separado omitida.");
+    return;
+  }
+
+  const lineas = data.items
+    .map(item => `• ${item.name} × ${item.qty} — S/ ${(item.price * item.qty).toFixed(2)}`)
+    .join("\n");
+
+  const total = data.items.reduce((sum, item) => sum + item.price * item.qty, 0);
+
+  const mensaje =
+    `🛒 *SEPARADO DE PRODUCTOS*\n\n` +
+    `👤 *Paciente:* ${data.patientName} (DNI ${data.patientDni})\n` +
+    `📞 *Teléfono:* ${data.patientPhone || "No registrado"}\n\n` +
+    `📦 *Productos solicitados:*\n${lineas}\n\n` +
+    `💰 *Total estimado: S/ ${total.toFixed(2)}*\n\n` +
+    `_Separado vía portal de pacientes_`;
+
+  const url =
+    `https://api.callmebot.com/whatsapp.php` +
+    `?phone=${CLINIC_WHATSAPP}` +
+    `&text=${encodeURIComponent(mensaje)}` +
+    `&apikey=${apiKey}`;
+
+  try {
+    const res = await fetch(url);
+    if (!res.ok) {
+      console.error("CallMeBot separado error:", res.status, await res.text());
+    } else {
+      console.log("WhatsApp de separado enviado correctamente.");
+    }
+  } catch (err) {
+    console.error("Error de conexión con CallMeBot (separado):", err);
+  }
+}
+
+interface ReserveProductsInput {
+  items:        ReservationItem[];
+  patientName:  string;
+  patientDni:   string;
+  patientPhone: string;
+}
+
+export const reserveProducts = onCall(
+  {
+    region:         "us-central1",
+    timeoutSeconds: 20,
+    cors:           true,
+    secrets:        ["CALLMEBOT_API_KEY"],
+  },
+  async (request) => {
+    const { items, patientName, patientDni, patientPhone } =
+      request.data as ReserveProductsInput;
+
+    const validItems = (items || []).filter(
+      (item) => item?.name && typeof item.qty === "number" && item.qty > 0
+    );
+
+    if (!validItems.length || !patientName?.trim() || !patientDni?.trim()) {
+      throw new HttpsError("invalid-argument", "Datos de separado incompletos.");
+    }
+
+    await sendProductReservationWhatsApp({
+      items:        validItems,
+      patientName:  patientName.trim(),
+      patientDni:   patientDni.trim().toUpperCase(),
+      patientPhone: (patientPhone || "").trim(),
+    });
+
+    return { success: true };
+  }
+);
+
 export const cancelPatientBooking = onCall(
   {
     region: "us-central1",

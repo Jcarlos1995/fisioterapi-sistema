@@ -1,24 +1,31 @@
 import React, { useState } from 'react';
 import { PortalPatient } from './types';
 import PatientAppointmentsList from './PatientAppointmentsList';
+import PatientProductsList from './PatientProductsList';
 
 interface PatientDashboardProps {
   patient: PortalPatient;
 }
 
-type Tab = 'appointments' | 'profile';
+type Tab = 'appointments' | 'products' | 'profile';
 
 const PatientDashboard: React.FC<PatientDashboardProps> = ({ patient }) => {
   const [tab, setTab] = useState<Tab>('appointments');
 
   return (
     <div className="space-y-4">
-      <div className="grid grid-cols-2 bg-slate-100 rounded-2xl p-1 text-sm">
+      <div className="grid grid-cols-3 bg-slate-100 rounded-2xl p-1 text-sm">
         <button
           onClick={() => setTab('appointments')}
           className={`py-2 rounded-xl font-semibold ${tab === 'appointments' ? 'bg-white text-blue-700 shadow-sm' : 'text-slate-600'}`}
         >
           Mis citas
+        </button>
+        <button
+          onClick={() => setTab('products')}
+          className={`py-2 rounded-xl font-semibold ${tab === 'products' ? 'bg-white text-blue-700 shadow-sm' : 'text-slate-600'}`}
+        >
+          Productos
         </button>
         <button
           onClick={() => setTab('profile')}
@@ -30,6 +37,8 @@ const PatientDashboard: React.FC<PatientDashboardProps> = ({ patient }) => {
 
       {tab === 'appointments' ? (
         <PatientAppointmentsList patient={patient} />
+      ) : tab === 'products' ? (
+        <PatientProductsList patient={patient} />
       ) : (
         <div className="bg-white border border-slate-200 rounded-2xl p-5 space-y-3 text-sm">
           <h2 className="text-base font-bold text-slate-800">Datos personales</h2>
