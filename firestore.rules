@@ -34,6 +34,18 @@ service cloud.firestore {
       allow read, write: if false;
     }
 
+    // Notificaciones de cancelación: lectura solo staff autenticado.
+    // Escritura únicamente por Admin SDK desde Cloud Functions.
+    match /cancellationNotifications/{id} {
+      allow read: if request.auth != null;
+      allow write: if false;
+    }
+
+    // Rate limiting del login del portal de pacientes (solo Admin SDK).
+    match /patientLoginRateLimits/{id} {
+      allow read, write: if false;
+    }
+
     // Cualquier otra colección: denegar por defecto
     match /{document=**} {
       allow read, write: if false;
