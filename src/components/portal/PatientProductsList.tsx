@@ -133,9 +133,9 @@ const PatientProductsList: React.FC<PatientProductsListProps> = ({ patient }) =>
 
   return (
     <div className={cartItems.length > 0 ? 'pb-28' : ''}>
-      <div className="space-y-3">
+      <div className="grid grid-cols-2 gap-3">
         {products.length === 0 ? (
-          <div className="bg-white border border-slate-200 rounded-2xl p-5 text-sm text-slate-500">
+          <div className="col-span-2 bg-white border border-slate-200 rounded-2xl p-5 text-sm text-slate-500">
             No hay productos disponibles por ahora.
           </div>
         ) : (
@@ -147,40 +147,36 @@ const PatientProductsList: React.FC<PatientProductsListProps> = ({ patient }) =>
             return (
               <article
                 key={product.id}
-                className={`bg-white border rounded-2xl p-4 shadow-sm transition-colors ${
+                className={`bg-white border rounded-2xl p-3 shadow-sm transition-colors flex flex-col justify-between gap-3 ${
                   inCart ? 'border-blue-300 bg-blue-50/40' : 'border-slate-200'
                 }`}
               >
-                <div className="flex items-start justify-between gap-3">
-                  <div className="min-w-0">
-                    <h3 className="font-semibold text-slate-800 leading-tight">{product.name}</h3>
-                    <p className="text-xs text-slate-500 mt-0.5">{product.category || 'Sin categoría'}</p>
-                  </div>
-                  <div className="text-right shrink-0">
-                    <p className="text-sm font-bold text-blue-700">S/ {(product.price || 0).toFixed(2)}</p>
-                    <p className={`text-xs mt-0.5 ${hasStock ? 'text-slate-500' : 'text-rose-500 font-semibold'}`}>
-                      {hasStock ? `Stock: ${product.stock}` : 'Sin stock'}
-                    </p>
-                  </div>
+                <div>
+                  <h3 className="font-semibold text-slate-800 leading-tight text-sm">{product.name}</h3>
+                  <p className="text-xs text-slate-500 mt-0.5">{product.category || 'Sin categoría'}</p>
+                  <p className="text-sm font-bold text-blue-700 mt-2">S/ {(product.price || 0).toFixed(2)}</p>
+                  <p className={`text-xs mt-0.5 ${hasStock ? 'text-slate-400' : 'text-rose-500 font-semibold'}`}>
+                    {hasStock ? `Stock: ${product.stock}` : 'Sin stock'}
+                  </p>
                 </div>
 
-                <div className="mt-3 flex items-center justify-end">
+                <div className="flex items-center justify-center">
                   {!inCart ? (
                     <button
                       type="button"
                       disabled={!hasStock}
                       onClick={() => addToCart(product)}
-                      className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-sm font-semibold transition-colors ${
+                      className={`w-full inline-flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold transition-colors ${
                         hasStock
                           ? 'bg-blue-600 hover:bg-blue-700 text-white'
                           : 'bg-slate-100 text-slate-400 cursor-not-allowed'
                       }`}
                     >
-                      <ShoppingCart size={14} />
+                      <ShoppingCart size={13} />
                       Separar
                     </button>
                   ) : (
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-1.5 w-full justify-between">
                       <button
                         type="button"
                         onClick={() => updateQty(product.id, -1)}
@@ -188,9 +184,7 @@ const PatientProductsList: React.FC<PatientProductsListProps> = ({ patient }) =>
                       >
                         <Minus size={13} />
                       </button>
-                      <span className="w-6 text-center text-sm font-bold text-slate-800">
-                        {cartItem.qty}
-                      </span>
+                      <span className="text-sm font-bold text-slate-800">{cartItem.qty}</span>
                       <button
                         type="button"
                         onClick={() => updateQty(product.id, 1)}
@@ -202,8 +196,7 @@ const PatientProductsList: React.FC<PatientProductsListProps> = ({ patient }) =>
                       <button
                         type="button"
                         onClick={() => removeFromCart(product.id)}
-                        className="ml-1 w-7 h-7 rounded-lg bg-rose-100 hover:bg-rose-200 text-rose-600 flex items-center justify-center transition-colors"
-                        title="Quitar del carrito"
+                        className="w-7 h-7 rounded-lg bg-rose-100 hover:bg-rose-200 text-rose-600 flex items-center justify-center transition-colors"
                       >
                         <X size={13} />
                       </button>
