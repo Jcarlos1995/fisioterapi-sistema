@@ -17,6 +17,16 @@ interface BookingNotification {
   time:        string;
 }
 
+interface CancellationNotification {
+  patientName: string;
+  patientDni: string;
+  therapyType: string;
+  date: string;
+  time: string;
+  professionalName: string;
+  reason?: string;
+}
+
 async function sendWhatsAppNotification(data: BookingNotification): Promise<void> {
   const apiKey = process.env.CALLMEBOT_API_KEY;
   if (!apiKey) {
@@ -60,6 +70,41 @@ async function sendWhatsAppNotification(data: BookingNotification): Promise<void
   } catch (err) {
     // No bloqueamos la reserva si falla el WhatsApp
     console.error("Error de conexión con CallMeBot:", err);
+  }
+}
+
+async function sendCancellationWhatsAppNotification(
+  data: CancellationNotification
+): Promise<void> {
+  const apiKey = process.env.CALLMEBOT_API_KEY;
+  if (!apiKey) {
+    console.warn("CALLMEBOT_API_KEY no configurada — notificación de cancelación omitida.");
+    return;
+  }
+
+  const mensaje =
+    `⚠️ *CANCELACIÓN*\n\n` +
+    `👤 *Paciente:* ${data.patientName} (DNI ${data.patientDni})\n` +
+    `🩺 *Cita:* ${data.therapyType}\n` +
+    `📅 *Fecha:* ${data.date} ${data.time}\n` +
+    `👨‍⚕️ *Profesional:* ${data.professionalName}\n` +
+    `📝 *Motivo:* ${data.reason?.trim() || "No especificado"}`;
+
+  const url =
+    `https://api.callmebot.com/whatsapp.php` +
+    `?phone=${CLINIC_WHATSAPP}` +
+    `&text=${encodeURIComponent(mensaje)}` +
+    `&apikey=${apiKey}`;
+
+  try {
+    const res = await fetch(url);
+    if (!res.ok) {
+      console.error("CallMeBot cancelación error:", res.status, await res.text());
+    } else {
+      console.log("WhatsApp de cancelación enviado correctamente a la clínica.");
+    }
+  } catch (err) {
+    console.error("Error de conexión con CallMeBot (cancelación):", err);
   }
 }
 
@@ -155,6 +200,38 @@ async function checkIpRateLimit(ip: string): Promise<void> {
       tx.update(ref, { count: count + 1 });
     }
   });
+}
+
+async function checkIpRateLimitInCollection(
+  ip: string,
+  collectionName: string
+): Promise<void> {
+  const ref = db.collection(collectionName).doc(ip.replace(/[:.]/g, "_"));
+  await db.runTransaction(async (tx) => {
+    const snap = await tx.get(ref);
+    const now = Date.now();
+    if (!snap.exists) {
+      tx.set(ref, { count: 1, windowStart: now });
+      return;
+    }
+    const { count, windowStart } = snap.data() as { count: number; windowStart: number };
+    if (now - windowStart > HOUR_MS) {
+      tx.set(ref, { count: 1, windowStart: now });
+    } else if (count >= MAX_PER_HOUR) {
+      throw new HttpsError(
+        "resource-exhausted",
+        "Demasiados intentos. Por favor espera una hora e intenta de nuevo."
+      );
+    } else {
+      tx.update(ref, { count: count + 1 });
+    }
+  });
+}
+
+function parseSessionDateTime(date: string, time: string): Date | null {
+  if (!date || !time) return null;
+  const parsed = new Date(`${date}T${time}:00`);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
 }
 
 interface BookingInput {
@@ -300,5 +377,241 @@ export const createBooking = onCall(
     }).catch((err) => console.error("sendWhatsAppNotification inesperado:", err));
 
     return { success: true, patientName: name.trim() };
+  }
+);
+
+interface ValidatePatientLoginInput {
+  dni: string;
+  birthDate: string;
+}
+
+interface GetPatientAppointmentsInput {
+  patientId: string;
+  dni: string;
+}
+
+interface PatientSession {
+  id: string;
+  date?: string;
+  time?: string;
+  [key: string]: unknown;
+}
+
+interface CancelPatientBookingInput {
+  sessionId: string;
+  patientDni: string;
+  patientBirthDate: string;
+  reason?: string;
+}
+
+export const validatePatientLogin = onCall(
+  {
+    region: "us-central1",
+    timeoutSeconds: 15,
+    cors: true,
+  },
+  async (request) => {
+    const ip = request.rawRequest.ip ?? "unknown";
+    await checkIpRateLimitInCollection(ip, "patientLoginRateLimits");
+
+    const { dni, birthDate } = request.data as ValidatePatientLoginInput;
+    const cleanDni = (dni || "").trim().toUpperCase();
+    const cleanBirthDate = (birthDate || "").trim();
+
+    if (!cleanDni || !cleanBirthDate) {
+      throw new HttpsError("invalid-argument", "Datos de acceso incompletos.");
+    }
+
+    const patientSnap = await db
+      .collection("patients")
+      .where("dni", "==", cleanDni)
+      .limit(1)
+      .get();
+
+    if (patientSnap.empty) {
+      throw new HttpsError("not-found", "No se encontró el paciente.");
+    }
+
+    const patientDoc = patientSnap.docs[0];
+    const patient = patientDoc.data() as {
+      name?: string;
+      phone?: string;
+      email?: string;
+      birthDate?: string;
+    };
+
+    if (!patient.birthDate || patient.birthDate !== cleanBirthDate) {
+      throw new HttpsError("not-found", "No se encontró el paciente.");
+    }
+
+    return {
+      patient: {
+        id: patientDoc.id,
+        name: patient.name ?? "",
+        phone: patient.phone ?? "",
+        email: patient.email ?? "",
+        birthDate: patient.birthDate,
+      },
+    };
+  }
+);
+
+export const getPatientAppointments = onCall(
+  {
+    region: "us-central1",
+    timeoutSeconds: 15,
+    cors: true,
+  },
+  async (request) => {
+    const { patientId, dni } = request.data as GetPatientAppointmentsInput;
+    const cleanPatientId = (patientId || "").trim();
+    const cleanDni = (dni || "").trim().toUpperCase();
+
+    if (!cleanPatientId || !cleanDni) {
+      throw new HttpsError("invalid-argument", "Datos de consulta incompletos.");
+    }
+
+    const patientRef = db.collection("patients").doc(cleanPatientId);
+    const patientSnap = await patientRef.get();
+
+    if (!patientSnap.exists) {
+      throw new HttpsError("not-found", "Paciente no encontrado.");
+    }
+
+    const patient = patientSnap.data() as { dni?: string };
+    if ((patient.dni || "").trim().toUpperCase() !== cleanDni) {
+      throw new HttpsError("permission-denied", "No autorizado para consultar estas citas.");
+    }
+
+    const sessionsSnap = await db
+      .collection("sessions")
+      .where("patientId", "==", cleanPatientId)
+      .get();
+
+    const sessions: PatientSession[] = sessionsSnap.docs
+      .map<PatientSession>((docSnap) => ({ id: docSnap.id, ...docSnap.data() }))
+      .sort((a, b) => {
+        const aDate = `${String(a.date || "")}T${String(a.time || "")}:00`;
+        const bDate = `${String(b.date || "")}T${String(b.time || "")}:00`;
+        return aDate.localeCompare(bDate);
+      });
+
+    return { sessions };
+  }
+);
+
+export const cancelPatientBooking = onCall(
+  {
+    region: "us-central1",
+    timeoutSeconds: 30,
+    cors: true,
+    secrets: ["CALLMEBOT_API_KEY"],
+  },
+  async (request) => {
+    const { sessionId, patientDni, patientBirthDate, reason } =
+      request.data as CancelPatientBookingInput;
+
+    const cleanSessionId = (sessionId || "").trim();
+    const cleanPatientDni = (patientDni || "").trim().toUpperCase();
+    const cleanPatientBirthDate = (patientBirthDate || "").trim();
+    const cleanReason = typeof reason === "string" ? reason.trim() : "";
+
+    if (!cleanSessionId || !cleanPatientDni || !cleanPatientBirthDate) {
+      throw new HttpsError("invalid-argument", "Datos de cancelación incompletos.");
+    }
+
+    const sessionRef = db.collection("sessions").doc(cleanSessionId);
+    const sessionSnap = await sessionRef.get();
+    if (!sessionSnap.exists) {
+      throw new HttpsError("not-found", "No se encontró la cita.");
+    }
+
+    const sessionData = sessionSnap.data() as {
+      patientId?: string;
+      professionalId?: string;
+      date?: string;
+      time?: string;
+      therapyType?: string;
+      status?: string;
+    };
+
+    if (!sessionData.patientId) {
+      throw new HttpsError("failed-precondition", "La cita no tiene paciente asociado.");
+    }
+
+    const patientRef = db.collection("patients").doc(sessionData.patientId);
+    const patientSnap = await patientRef.get();
+    if (!patientSnap.exists) {
+      throw new HttpsError("not-found", "No se encontró el paciente de la cita.");
+    }
+
+    const patientData = patientSnap.data() as {
+      name?: string;
+      dni?: string;
+      birthDate?: string;
+    };
+
+    const storedDni = (patientData.dni || "").trim().toUpperCase();
+    const storedBirthDate = (patientData.birthDate || "").trim();
+    if (storedDni !== cleanPatientDni || storedBirthDate !== cleanPatientBirthDate) {
+      throw new HttpsError("permission-denied", "No autorizado para cancelar esta cita.");
+    }
+
+    if (sessionData.status !== "Programada" && sessionData.status !== "Confirmada") {
+      throw new HttpsError("failed-precondition", "Esta cita no se puede cancelar.");
+    }
+
+    const appointmentDate = parseSessionDateTime(sessionData.date || "", sessionData.time || "");
+    if (!appointmentDate) {
+      throw new HttpsError("failed-precondition", "La fecha/hora de la cita es inválida.");
+    }
+
+    const now = Date.now();
+    const diffMs = appointmentDate.getTime() - now;
+    const minAdvanceMs = 2 * 60 * 60 * 1000;
+    if (diffMs < minAdvanceMs) {
+      throw new HttpsError(
+        "failed-precondition",
+        "Las cancelaciones requieren mínimo 2 horas de anticipación."
+      );
+    }
+
+    const professionalId = sessionData.professionalId || "";
+    let professionalName = "No asignado";
+    if (professionalId) {
+      const professionalSnap = await db.collection("professionals").doc(professionalId).get();
+      if (professionalSnap.exists) {
+        const professionalData = professionalSnap.data() as { name?: string };
+        professionalName = professionalData.name || "No asignado";
+      }
+    }
+
+    await sessionRef.update({ status: "Cancelada" });
+
+    await db.collection("cancellationNotifications").add({
+      sessionId: cleanSessionId,
+      patientId: sessionData.patientId,
+      patientName: patientData.name || "",
+      patientDni: cleanPatientDni,
+      cancelledAt: admin.firestore.FieldValue.serverTimestamp(),
+      sessionDate: sessionData.date || "",
+      sessionTime: sessionData.time || "",
+      therapyType: sessionData.therapyType || "",
+      professionalId,
+      read: false,
+      reason: cleanReason || null,
+    });
+
+    sendCancellationWhatsAppNotification({
+      patientName: patientData.name || "",
+      patientDni: cleanPatientDni,
+      therapyType: sessionData.therapyType || "",
+      date: sessionData.date || "",
+      time: sessionData.time || "",
+      professionalName,
+      reason: cleanReason,
+    }).catch((err) => console.error("sendCancellationWhatsAppNotification inesperado:", err));
+
+    return { success: true };
   }
 );
