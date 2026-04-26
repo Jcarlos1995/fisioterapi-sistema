@@ -133,9 +133,9 @@ const PatientProductsList: React.FC<PatientProductsListProps> = ({ patient }) =>
 
   return (
     <div className={cartItems.length > 0 ? 'pb-28' : ''}>
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid grid-cols-3 gap-3">
         {products.length === 0 ? (
-          <div className="col-span-2 bg-white border border-slate-200 rounded-2xl p-5 text-sm text-slate-500">
+          <div className="col-span-3 bg-white border border-slate-200 rounded-2xl p-5 text-sm text-slate-500">
             No hay productos disponibles por ahora.
           </div>
         ) : (
