@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { UserCircle } from 'lucide-react';
+import { ArrowLeft, UserCircle } from 'lucide-react';
 import { BOOKING_URL, LANDING_URL } from '../../config';
 import { useToast } from '../../context/ToastContext';
 import { usePatientAuth } from '../../context/PatientAuthContext';
@@ -53,6 +53,14 @@ const PatientLogin: React.FC<PatientLoginProps> = ({ onSuccess }) => {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 to-blue-50 flex items-center justify-center p-4">
+      <a
+        href={LANDING_URL}
+        className="fixed top-5 left-5 flex items-center gap-2 text-sm font-semibold text-slate-500 hover:text-blue-600 transition-colors bg-white px-4 py-2 rounded-full shadow-sm border border-slate-200 hover:border-blue-200"
+      >
+        <ArrowLeft size={16} />
+        Volver al inicio
+      </a>
+
       <div className="w-full max-w-md bg-white border border-slate-200 rounded-3xl shadow-xl p-6 sm:p-8">
         <div className="text-center mb-6">
           <div className="w-14 h-14 rounded-2xl bg-blue-100 text-blue-600 mx-auto flex items-center justify-center mb-3">
@@ -98,14 +106,7 @@ const PatientLogin: React.FC<PatientLoginProps> = ({ onSuccess }) => {
           <a href={BOOKING_URL} className="text-blue-700 hover:text-blue-800 font-semibold">
             ¿Necesitas reservar tu primera cita?
           </a>
-          <p>
-            <a href={LANDING_URL} className="text-slate-600 hover:text-slate-800">
-              Volver al sitio principal
-            </a>
-          </p>
-          <p className="text-xs text-slate-500">
-            Si nunca has venido o falta tu fecha de nacimiento, acércate a recepción.
-          </p>
+          
         </div>
       </div>
     </div>
