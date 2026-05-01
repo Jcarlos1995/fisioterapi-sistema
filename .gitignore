@@ -75,3 +75,8 @@ build/
 
 # dataconnect generated files
 .dataconnect
+
+# Playwright
+playwright-report/
+test-results/
+.playwright/
