@@ -13,8 +13,14 @@ export const validateBirthDate = (date: string): { valid: boolean; error?: strin
   const d = new Date(`${date}T00:00:00`);
   if (Number.isNaN(d.getTime())) return { valid: false, error: 'Fecha inválida' };
 
+  // Comparar usando fechas locales en formato YYYY-MM-DD para evitar problemas de zona horaria
   const now = new Date();
-  if (d > now) return { valid: false, error: 'La fecha no puede ser futura' };
+  const todayStr = [
+    now.getFullYear(),
+    String(now.getMonth() + 1).padStart(2, '0'),
+    String(now.getDate()).padStart(2, '0'),
+  ].join('-');
+  if (date > todayStr) return { valid: false, error: 'La fecha no puede ser futura' };
 
   const minDate = new Date(now.getFullYear() - 120, 0, 1);
   if (d < minDate) return { valid: false, error: 'Fecha fuera de rango' };

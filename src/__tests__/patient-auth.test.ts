@@ -72,7 +72,12 @@ describe('validateBirthDate', () => {
   it('fecha futura falla', () => {
     const tomorrow = new Date();
     tomorrow.setDate(tomorrow.getDate() + 1);
-    const iso = tomorrow.toISOString().slice(0, 10);
+    // Usar fecha local (no UTC) para evitar desfases de zona horaria
+    const iso = [
+      tomorrow.getFullYear(),
+      String(tomorrow.getMonth() + 1).padStart(2, '0'),
+      String(tomorrow.getDate()).padStart(2, '0'),
+    ].join('-');
     const r = validateBirthDate(iso);
     expect(r.valid).toBe(false);
     expect(r.error).toMatch(/futura/i);
@@ -89,14 +94,22 @@ describe('validateBirthDate', () => {
   it('fecha de ayer pasa', () => {
     const yesterday = new Date();
     yesterday.setDate(yesterday.getDate() - 1);
-    const iso = yesterday.toISOString().slice(0, 10);
+    const iso = [
+      yesterday.getFullYear(),
+      String(yesterday.getMonth() + 1).padStart(2, '0'),
+      String(yesterday.getDate()).padStart(2, '0'),
+    ].join('-');
     expect(validateBirthDate(iso).valid).toBe(true);
   });
 
   it('fecha de hace exactamente 100 años pasa', () => {
     const d = new Date();
     d.setFullYear(d.getFullYear() - 100);
-    const iso = d.toISOString().slice(0, 10);
+    const iso = [
+      d.getFullYear(),
+      String(d.getMonth() + 1).padStart(2, '0'),
+      String(d.getDate()).padStart(2, '0'),
+    ].join('-');
     expect(validateBirthDate(iso).valid).toBe(true);
   });
 });
