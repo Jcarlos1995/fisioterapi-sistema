@@ -1,8 +1,8 @@
 import React from 'react';
 
 /* ── Base pulse block ─────────────────────────────────────────────── */
-const Pulse: React.FC<{ className?: string }> = ({ className = '' }) => (
-  <div className={`animate-pulse bg-slate-200 rounded-lg ${className}`} />
+const Pulse: React.FC<{ className?: string; style?: React.CSSProperties }> = ({ className = '', style }) => (
+  <div className={`animate-pulse bg-slate-200 rounded-lg ${className}`} style={style} />
 );
 
 /* ── Dashboard: stat cards (5 tarjetas) ──────────────────────────── */
