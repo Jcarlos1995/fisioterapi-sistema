@@ -7,11 +7,12 @@ import { useAuth } from '../context/AuthContext';
 import { useToast } from '../context/ToastContext';
 import useEscKey from '../hooks/useEscKey';
 import { validateBirthDate } from '../utils/validation';
+import { writeAuditLog } from '../utils/auditLogger';
 import ConfirmModal from './ConfirmModal';
 import { SkeletonHeader, SkeletonSearchBar, SkeletonTableRows } from './SkeletonLoader';
 
 const PatientsManager: React.FC = () => {
-  const { isTI, permissions } = useAuth();
+  const { user, isTI, permissions } = useAuth();
   const { showToast } = useToast();
   const [patients, setPatients] = useState<Patient[]>([]);
   const [professionals, setProfessionals] = useState<Professional[]>([]);
@@ -75,6 +76,7 @@ const PatientsManager: React.FC = () => {
         const { id: _id, createdAt: _createdAt, ...patientData } = currentPatient as Patient;
         const patientRef = doc(db, "patients", currentPatient.id);
         await updateDoc(patientRef, patientData);
+        if (user) void writeAuditLog(user, 'update_patient', currentPatient.id, currentPatient.name);
 
         // 2. ACTUALIZACIÓN EN CASCADA: Actualizar profesional en la colección 'sessions'
         if (currentPatient.professionalId) {
@@ -94,10 +96,11 @@ const PatientsManager: React.FC = () => {
         }
       } else {
         // Crear nuevo paciente
-        await addDoc(collection(db, "patients"), {
+        const newRef = await addDoc(collection(db, "patients"), {
           ...currentPatient,
           createdAt: new Date().toISOString()
         });
+        if (user) void writeAuditLog(user, 'create_patient', newRef.id, currentPatient.name);
       }
       setIsModalOpen(false);
       setCurrentPatient({});
@@ -115,7 +118,9 @@ const PatientsManager: React.FC = () => {
     const id = confirmDeleteId;
     setConfirmDeleteId(null);
     try {
+      const patientName = patients.find(p => p.id === id)?.name;
       await deleteDoc(doc(db, "patients", id));
+      if (user) void writeAuditLog(user, 'delete_patient', id, patientName);
       showToast('Paciente eliminado');
     } catch (error) {
       console.error("Error al eliminar:", error);
@@ -125,6 +130,13 @@ const PatientsManager: React.FC = () => {
 
   const getProfName = (id?: string) => {
     return professionals.find(p => p.id === id)?.name || 'No asignado';
+  };
+
+  // Abre el modal de edición y registra que el usuario consultó este expediente
+  const handleEditOpen = (patient: Patient) => {
+    setCurrentPatient(patient);
+    setIsModalOpen(true);
+    if (user) void writeAuditLog(user, 'open_patient_detail', patient.id, patient.name);
   };
 
   return (
@@ -209,7 +221,7 @@ const PatientsManager: React.FC = () => {
                   </td>
                   <td className="px-6 py-4 text-right space-x-2">
                     {(isTI || permissions.patients.edit) && (
-                      <button onClick={() => { setCurrentPatient(patient); setIsModalOpen(true); }} className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg">
+                      <button onClick={() => handleEditOpen(patient)} className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg">
                         <Edit2 size={18} />
                       </button>
                     )}

@@ -11,6 +11,7 @@ import { useToast } from '../context/ToastContext';
 import useEscKey from '../hooks/useEscKey';
 import ConfirmModal from './ConfirmModal';
 import { isToday, shouldAutoCreateSale, shouldWarnOnLeave, statusBadgeClass } from '../utils/session';
+import { writeAuditLog } from '../utils/auditLogger';
 import { SkeletonHeader, SkeletonSessionCards } from './SkeletonLoader';
 
 // ─── Tipos locales ─────────────────────────────────────────────────────────────
@@ -166,6 +167,10 @@ const SessionsManager: React.FC = () => {
       }
 
       await updateDoc(doc(db, 'sessions', session.id), { status: newStatus });
+      if (user) void writeAuditLog(user, 'update_session_status', session.id,
+        patients.find(p => p.id === session.patientId)?.name,
+        { oldStatus: currentStatus, newStatus },
+      );
       showToast();
     } catch (error) {
       console.error('Error al actualizar estado:', error);
@@ -180,6 +185,10 @@ const SessionsManager: React.FC = () => {
     setPendingChange(null);
     try {
       await updateDoc(doc(db, 'sessions', session.id), { status: newStatus });
+      if (user) void writeAuditLog(user, 'update_session_status', session.id,
+        patients.find(p => p.id === session.patientId)?.name,
+        { oldStatus: session.status, newStatus },
+      );
       showToast('Estado actualizado. La venta permanece registrada en Área Reservada.');
     } catch {
       showToast('No se pudo actualizar el estado.', 'error');
@@ -197,7 +206,11 @@ const SessionsManager: React.FC = () => {
     if (!newSession.time) { setFormError('Por favor selecciona una hora.'); return; }
     setFormError(null);
     try {
-      await addDoc(collection(db, 'sessions'), newSession);
+      const sessionRef = await addDoc(collection(db, 'sessions'), newSession);
+      if (user) void writeAuditLog(user, 'create_session', sessionRef.id,
+        patients.find(p => p.id === newSession.patientId)?.name,
+        { date: newSession.date, therapyType: newSession.therapyType },
+      );
       setIsModalOpen(false);
       setNewSession({ patientId: '', professionalId: '', date: '', time: '', therapyType: '', status: 'Programada', notes: '' });
       showToast('Cita agendada');
@@ -211,8 +224,13 @@ const SessionsManager: React.FC = () => {
   const confirmDeleteSession = async () => {
     if (!confirmDeleteId) return;
     const id = confirmDeleteId;
+    const session = sessions.find(s => s.id === id);
     setConfirmDeleteId(null);
     await deleteDoc(doc(db, 'sessions', id));
+    if (user) void writeAuditLog(user, 'delete_session', id,
+      patients.find(p => p.id === session?.patientId)?.name,
+      { date: session?.date, therapyType: session?.therapyType },
+    );
     showToast('Cita eliminada');
   };
 

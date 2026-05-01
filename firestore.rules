@@ -72,6 +72,14 @@ service cloud.firestore {
       allow write: if false;
     }
 
+    // Logs de auditoría (Ley 29733): solo staff autenticado puede leer y crear.
+    // Nunca se actualiza ni elimina desde el cliente (inmutables).
+    match /auditLogs/{id} {
+      allow read:          if request.auth != null;
+      allow create:        if request.auth != null;
+      allow update, delete: if false;
+    }
+
     // Cualquier otra colección: denegar por defecto
     match /{document=**} {
       allow read, write: if false;
