@@ -7,7 +7,7 @@
     "runtime": "nodejs20"
   },
   "hosting": {
-    "public": "build",
+    "public": "dist",
     "ignore": [
       "firebase.json",
       "**/.*",
