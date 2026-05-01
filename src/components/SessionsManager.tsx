@@ -4,7 +4,7 @@ import { Session, Patient, Professional } from '../types';
 import { db } from '../firebaseConfig';
 import {
   collection, onSnapshot, addDoc, deleteDoc, doc,
-  updateDoc, getDocs, query, where, getDoc, orderBy,
+  updateDoc, getDocs, query, where, getDoc,
 } from 'firebase/firestore';
 import { useAuth } from '../context/AuthContext';
 import { useToast } from '../context/ToastContext';
@@ -59,13 +59,13 @@ const SessionsManager: React.FC = () => {
 
   // ── Carga de datos ───────────────────────────────────────────────────────────
   useEffect(() => {
-    const unsubSessions      = onSnapshot(collection(db, 'sessions'),      snap => setSessions(snap.docs.map(d => ({ id: d.id, ...d.data() } as Session))));
-    const unsubPatients      = onSnapshot(collection(db, 'patients'),      snap => setPatients(snap.docs.map(d => ({ id: d.id, ...d.data() } as Patient))));
-    const unsubProfessionals = onSnapshot(collection(db, 'professionals'), snap => setProfessionals(snap.docs.map(d => ({ id: d.id, ...d.data() } as Professional))));
-    const unsubTasks         = onSnapshot(
-      query(collection(db, 'therapyTasks'), orderBy('createdAt', 'desc')),
-      snap => setTherapyTasks(snap.docs.map(d => ({ id: d.id, ...d.data() } as TherapyTask)))
-    );
+    const onErr = (label: string) => (err: Error) => console.error(`onSnapshot [${label}]:`, err);
+
+    const unsubSessions      = onSnapshot(collection(db, 'sessions'),      snap => setSessions(snap.docs.map(d => ({ id: d.id, ...d.data() } as Session))),      onErr('sessions'));
+    const unsubPatients      = onSnapshot(collection(db, 'patients'),      snap => setPatients(snap.docs.map(d => ({ id: d.id, ...d.data() } as Patient))),      onErr('patients'));
+    const unsubProfessionals = onSnapshot(collection(db, 'professionals'), snap => setProfessionals(snap.docs.map(d => ({ id: d.id, ...d.data() } as Professional))), onErr('professionals'));
+    const unsubTasks         = onSnapshot(collection(db, 'therapyTasks'),  snap => setTherapyTasks(snap.docs.map(d => ({ id: d.id, ...d.data() } as TherapyTask))),  onErr('therapyTasks'));
+
     return () => { unsubSessions(); unsubPatients(); unsubProfessionals(); unsubTasks(); };
   }, []);
 
