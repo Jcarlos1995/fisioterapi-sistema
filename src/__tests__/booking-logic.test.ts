@@ -1,30 +1,12 @@
-// Tests de lógica pura extraída de BookingSystem.tsx (sin Firebase ni React)
-
-// ─── Implementaciones bajo prueba ────────────────────────────────────────────
-// Copia exacta de slotKey en BookingSystem.tsx
-function slotKey(iso: string): string {
-  try {
-    const d = new Date(iso);
-    if (isNaN(d.getTime())) return iso;
-    const minutes = d.getMinutes();
-    d.setMinutes(minutes < 30 ? 0 : 30, 0, 0);
-    return d.toISOString();
-  } catch {
-    return iso;
-  }
-}
-
-type BookedSlot = { start: string; end: string; therapyType: string };
-
-function buildOccupancyMap(bookedSlots: BookedSlot[]): Map<string, Set<string>> {
-  const map = new Map<string, Set<string>>();
-  bookedSlots.forEach(s => {
-    const key = slotKey(s.start);
-    if (!map.has(key)) map.set(key, new Set());
-    if (s.therapyType) map.get(key)!.add(s.therapyType);
-  });
-  return map;
-}
+// Tests de lógica pura de booking — importan directamente desde utils/booking.ts
+import {
+  slotKey,
+  buildOccupancyMap,
+  isSlotAllowed,
+  occupancyColor,
+  mapBookingError,
+  BookedSlot,
+} from '../utils/booking';
 
 const THERAPY_OPTIONS = [
   'Fisioterapia',
@@ -33,18 +15,6 @@ const THERAPY_OPTIONS = [
   'Masaje Terapéutico',
   'Terapia Deportiva',
 ];
-
-function handleSelectAllow(
-  startStr: string,
-  occupancyMap: Map<string, Set<string>>,
-  now: number,
-): boolean {
-  const startTime = new Date(startStr).getTime();
-  if (startTime <= now) return false;
-  const key   = slotKey(startStr);
-  const taken = occupancyMap.get(key)?.size ?? 0;
-  return taken < THERAPY_OPTIONS.length;
-}
 
 // ─── slotKey ─────────────────────────────────────────────────────────────────
 describe('slotKey', () => {
@@ -178,24 +148,24 @@ describe('buildOccupancyMap', () => {
   });
 });
 
-// ─── handleSelectAllow ────────────────────────────────────────────────────────
-describe('handleSelectAllow', () => {
+// ─── isSlotAllowed ────────────────────────────────────────────────────────────
+describe('isSlotAllowed', () => {
   const FUTURE = new Date('2099-01-01T10:00:00.000Z').getTime();
   const NOW    = new Date('2026-04-26T12:00:00.000Z').getTime();
   const PAST   = new Date('2020-01-01T10:00:00.000Z').toISOString();
 
   it('bloquea un slot cuyo inicio ya pasó', () => {
-    expect(handleSelectAllow(PAST, new Map(), NOW)).toBe(false);
+    expect(isSlotAllowed(PAST, new Map(), THERAPY_OPTIONS.length, NOW)).toBe(false);
   });
 
   it('bloquea un slot que coincide exactamente con "ahora"', () => {
     const isoNow = new Date(NOW).toISOString();
-    expect(handleSelectAllow(isoNow, new Map(), NOW)).toBe(false);
+    expect(isSlotAllowed(isoNow, new Map(), THERAPY_OPTIONS.length, NOW)).toBe(false);
   });
 
   it('permite un slot futuro con mapa vacío', () => {
     const isoFuture = new Date(FUTURE).toISOString();
-    expect(handleSelectAllow(isoFuture, new Map(), NOW)).toBe(true);
+    expect(isSlotAllowed(isoFuture, new Map(), THERAPY_OPTIONS.length, NOW)).toBe(true);
   });
 
   it('permite un slot futuro con 1 servicio ocupado', () => {
@@ -203,7 +173,7 @@ describe('handleSelectAllow', () => {
     const map = buildOccupancyMap([
       { start: isoFuture, end: '', therapyType: 'Fisioterapia' },
     ]);
-    expect(handleSelectAllow(isoFuture, map, NOW)).toBe(true);
+    expect(isSlotAllowed(isoFuture, map, THERAPY_OPTIONS.length, NOW)).toBe(true);
   });
 
   it('permite un slot futuro con 4 servicios ocupados', () => {
@@ -212,7 +182,7 @@ describe('handleSelectAllow', () => {
       start: isoFuture, end: '', therapyType: t,
     }));
     const map = buildOccupancyMap(slots);
-    expect(handleSelectAllow(isoFuture, map, NOW)).toBe(true);
+    expect(isSlotAllowed(isoFuture, map, THERAPY_OPTIONS.length, NOW)).toBe(true);
   });
 
   it('bloquea un slot futuro con los 5 servicios ocupados', () => {
@@ -221,18 +191,71 @@ describe('handleSelectAllow', () => {
       start: isoFuture, end: '', therapyType: t,
     }));
     const map = buildOccupancyMap(slots);
-    expect(handleSelectAllow(isoFuture, map, NOW)).toBe(false);
+    expect(isSlotAllowed(isoFuture, map, THERAPY_OPTIONS.length, NOW)).toBe(false);
   });
 
-  it('inicio en minutos intermedios se normaliza correctamente para la comprobación', () => {
-    // :15 del mismo slot que :00 → mismo key → hereda ocupación
-    const isoBase    = new Date(FUTURE).toISOString();
-    const isoAt15    = new Date(FUTURE + 15 * 60 * 1000).toISOString(); // +15 min
+  it('inicio en minutos intermedios se normaliza y hereda la ocupación del slot', () => {
+    const isoBase = new Date(FUTURE).toISOString();
+    const isoAt15 = new Date(FUTURE + 15 * 60 * 1000).toISOString();
     const slots: BookedSlot[] = THERAPY_OPTIONS.map(t => ({
       start: isoBase, end: '', therapyType: t,
     }));
     const map = buildOccupancyMap(slots);
-    // isoAt15 cae en el mismo slot que isoBase → debe bloquearse
-    expect(handleSelectAllow(isoAt15, map, NOW)).toBe(false);
+    // isoAt15 cae dentro del mismo slot de 30 min que isoBase → debe bloquearse
+    expect(isSlotAllowed(isoAt15, map, THERAPY_OPTIONS.length, NOW)).toBe(false);
+  });
+});
+
+// ─── occupancyColor ───────────────────────────────────────────────────────────
+describe('occupancyColor', () => {
+  it('verde para 1/5', () => {
+    expect(occupancyColor(1, 5)).toBe('#f0fdf4');
+  });
+
+  it('amarillo para 2/5', () => {
+    expect(occupancyColor(2, 5)).toBe('#fefce8');
+  });
+
+  it('amarillo para 3/5', () => {
+    expect(occupancyColor(3, 5)).toBe('#fefce8');
+  });
+
+  it('naranja para 4/5', () => {
+    expect(occupancyColor(4, 5)).toBe('#ffedd5');
+  });
+
+  it('rojo para 5/5 (lleno)', () => {
+    expect(occupancyColor(5, 5)).toBe('#fecaca');
+  });
+
+  it('rojo cuando taken supera total (caso límite)', () => {
+    expect(occupancyColor(6, 5)).toBe('#fecaca');
+  });
+});
+
+// ─── mapBookingError ──────────────────────────────────────────────────────────
+describe('mapBookingError', () => {
+  it('detecta cita duplicada por código already-exists', () => {
+    expect(mapBookingError('already-exists: booking')).toMatch(/cita pendiente/i);
+  });
+
+  it('detecta cita duplicada por texto "Ya tienes"', () => {
+    expect(mapBookingError('Ya tienes una cita registrada')).toMatch(/cita pendiente/i);
+  });
+
+  it('detecta rate limit por código resource-exhausted', () => {
+    expect(mapBookingError('resource-exhausted: quota exceeded')).toMatch(/espera una hora/i);
+  });
+
+  it('detecta rate limit por texto "Demasiados"', () => {
+    expect(mapBookingError('Demasiados intentos desde esta IP')).toMatch(/espera una hora/i);
+  });
+
+  it('devuelve mensaje genérico para errores desconocidos', () => {
+    expect(mapBookingError('internal: unexpected error')).toMatch(/intenta de nuevo/i);
+  });
+
+  it('devuelve mensaje genérico para string vacío', () => {
+    expect(mapBookingError('')).toMatch(/intenta de nuevo/i);
   });
 });

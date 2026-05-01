@@ -4,12 +4,12 @@ import timeGridPlugin from '@fullcalendar/timegrid';
 import interactionPlugin from '@fullcalendar/interaction';
 import esLocale from '@fullcalendar/core/locales/es';
 import { getFunctions, httpsCallable } from 'firebase/functions';
-import { Activity, Clock, User, Phone, CheckCircle, Mail, ArrowLeft, X, Lock, AlertCircle } from 'lucide-react';
+import { Activity, Clock, User, Phone, CheckCircle, ArrowLeft, X, Lock, AlertCircle } from 'lucide-react';
+import { BookedSlot, slotKey, buildOccupancyMap, isSlotAllowed, occupancyColor, mapBookingError } from '../utils/booking';
 
 
 const BookingSystem: React.FC = () => {
-  // Ahora guardamos los slots ocupados con su therapyType
-  const [bookedSlots, setBookedSlots] = useState<{ start: string; end: string; therapyType: string }[]>([]);
+  const [bookedSlots, setBookedSlots] = useState<BookedSlot[]>([]);
   const [selectedSlot, setSelectedSlot] = useState<any>(null);
   const [isBooked, setIsBooked] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -19,7 +19,6 @@ const BookingSystem: React.FC = () => {
   const [formData, setFormData] = useState({
     name: '',
     phone: '',
-    email: '',
     dni: '',
     age: '',
     birthDate: '',
@@ -37,30 +36,8 @@ const BookingSystem: React.FC = () => {
   // URL de tu landing page
   const LANDING_URL = 'https://fisiochepen-oficial.web.app';
 
-  // ─── Mapa de ocupación: clave = inicio ISO del slot, valor = Set de servicios tomados ───
-  // Normaliza una fecha ISO a clave de slot (redondeada a 30 min).
-  const slotKey = (iso: string): string => {
-    try {
-      const d = new Date(iso);
-      if (isNaN(d.getTime())) return iso;
-      // Redondear minutos hacia abajo a múltiplo de 30
-      const minutes = d.getMinutes();
-      d.setMinutes(minutes < 30 ? 0 : 30, 0, 0);
-      return d.toISOString();
-    } catch {
-      return iso;
-    }
-  };
-
-  const occupancyMap = useMemo(() => {
-    const map = new Map<string, Set<string>>();
-    bookedSlots.forEach(s => {
-      const key = slotKey(s.start);
-      if (!map.has(key)) map.set(key, new Set());
-      if (s.therapyType) map.get(key)!.add(s.therapyType);
-    });
-    return map;
-  }, [bookedSlots]);
+  // ─── Mapa de ocupación: slot ISO normalizado → Set de servicios tomados ──────
+  const occupancyMap = useMemo(() => buildOccupancyMap(bookedSlots), [bookedSlots]);
 
   // Servicios tomados en el slot actualmente seleccionado
   const takenInSelectedSlot = useMemo(() => {
@@ -107,12 +84,7 @@ const BookingSystem: React.FC = () => {
       const taken = services.size;
       if (taken === 0) return;
 
-      // Color según nivel de ocupación
-      let color: string;
-      if (taken >= total)     color = '#fecaca'; // 5/5 — rojo
-      else if (taken >= 4)    color = '#ffedd5'; // 4/5 — naranja
-      else if (taken >= 2)    color = '#fefce8'; // 2-3/5 — amarillo
-      else                    color = '#f0fdf4'; // 1/5 — verde suave
+      const color = occupancyColor(taken, total);
 
       const start = new Date(key);
       const end   = new Date(start.getTime() + 30 * 60 * 1000);
@@ -128,17 +100,9 @@ const BookingSystem: React.FC = () => {
     return out;
   }, [occupancyMap, therapyOptions.length]);
 
-  // Bloquear selección de slots 5/5
-  const handleSelectAllow = (selectInfo: any): boolean => {
-    // 1) No permitir seleccionar slots cuya hora de inicio ya pasó
-    const startTime = new Date(selectInfo.startStr).getTime();
-    if (startTime <= Date.now()) return false;
-
-    // 2) No permitir slots totalmente ocupados (5/5 servicios)
-    const key   = slotKey(selectInfo.startStr);
-    const taken = occupancyMap.get(key)?.size ?? 0;
-    return taken < therapyOptions.length;
-  };
+  // Bloquear selección de slots pasados o completamente llenos (5/5)
+  const handleSelectAllow = (selectInfo: any): boolean =>
+    isSlotAllowed(selectInfo.startStr, occupancyMap, therapyOptions.length);
 
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -169,7 +133,6 @@ const BookingSystem: React.FC = () => {
       await createBooking({
         name:        formData.name,
         phone:       formData.phone,
-        email:       formData.email,
         dni:         formData.dni,
         age:         formData.age,
         birthDate:   formData.birthDate,
@@ -181,14 +144,7 @@ const BookingSystem: React.FC = () => {
       setIsBooked(true);
     } catch (error: any) {
       console.error("Error en registro de cita:", error);
-      const msg: string = error?.message ?? '';
-      if (msg.includes('already-exists') || msg.includes('Ya tienes')) {
-        setSubmitError("Ya tienes una cita pendiente registrada. Contacta a la clínica si necesitas modificarla.");
-      } else if (msg.includes('resource-exhausted') || msg.includes('Demasiados')) {
-        setSubmitError("Demasiados intentos. Por favor espera una hora e intenta de nuevo.");
-      } else {
-        setSubmitError("Hubo un problema al guardar tu cita. Por favor, intenta de nuevo.");
-      }
+      setSubmitError(mapBookingError(error?.message ?? ''));
     } finally {
       setIsSubmitting(false);
     }
@@ -220,7 +176,6 @@ const BookingSystem: React.FC = () => {
         <div class="row"><span class="label">DNI</span><span class="value">${formData.dni}</span></div>
         <div class="row"><span class="label">Fecha de Nacimiento</span><span class="value">${formData.birthDate}</span></div>
         <div class="row"><span class="label">Teléfono</span><span class="value">${formData.phone}</span></div>
-        <div class="row"><span class="label">Email</span><span class="value">${formData.email}</span></div>
         <div class="row"><span class="label">Servicio</span><span class="value">${formData.therapyType}</span></div>
         <div class="row"><span class="label">Fecha y Hora</span><span class="value">${fechaHora}</span></div>
         <div class="row"><span class="label">Estado</span><span class="value" style="color:#16a34a">✓ Programada</span></div>
@@ -269,7 +224,6 @@ const BookingSystem: React.FC = () => {
                   { label: 'DNI',                value: formData.dni },
                   { label: 'Fecha de Nacimiento', value: formData.birthDate },
                   { label: 'Teléfono',           value: formData.phone },
-                  { label: 'Email',              value: formData.email },
                   { label: 'Servicio',    value: formData.therapyType },
                   { label: 'Fecha y Hora', value: selectedSlot ? new Date(selectedSlot.startStr).toLocaleString('es-ES', { dateStyle: 'full', timeStyle: 'short' }) : '—' },
                   { label: 'Estado',      value: '✓ Programada' },
@@ -427,14 +381,6 @@ const BookingSystem: React.FC = () => {
                     <div className="relative"><Phone className="absolute left-3 top-2.5 text-slate-400" size={16} />
                       <input required type="tel" className="w-full pl-10 pr-4 py-2 border rounded-xl outline-none focus:ring-2 focus:ring-blue-500" 
                         value={formData.phone} onChange={e => setFormData({...formData, phone: e.target.value})} />
-                    </div>
-                  </div>
-
-                  <div>
-                    <label className="text-[10px] font-bold text-slate-400 uppercase">Email</label>
-                    <div className="relative"><Mail className="absolute left-3 top-2.5 text-slate-400" size={16} />
-                      <input required type="email" className="w-full pl-10 pr-4 py-2 border rounded-xl outline-none focus:ring-2 focus:ring-blue-500" 
-                        value={formData.email} onChange={e => setFormData({...formData, email: e.target.value})} />
                     </div>
                   </div>
 
