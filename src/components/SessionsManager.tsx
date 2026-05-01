@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import { CalendarDays, Plus, Trash2, Clock, UserSquare2, AlertTriangle, WifiOff } from 'lucide-react';
+import React, { useState, useEffect, useMemo } from 'react';
+import { CalendarDays, Plus, Trash2, Clock, UserSquare2, AlertTriangle, WifiOff, ChevronLeft, ChevronRight } from 'lucide-react';
 import { Session, Patient, Professional } from '../types';
 import { db } from '../firebaseConfig';
 import {
@@ -26,6 +26,21 @@ interface TherapyTask {
   active: boolean;
 }
 
+// ─── Constantes ───────────────────────────────────────────────────────────────
+
+const PAGE_SIZE = 8;
+
+const STATUS_FILTERS = [
+  { label: 'Todas',      value: 'all' },
+  { label: 'Programada', value: 'Programada' },
+  { label: 'Confirmada', value: 'Confirmada' },
+  { label: 'Efectuada',  value: 'Efectuada' },
+  { label: 'Pagada',     value: 'Pagada' },
+  { label: 'Cancelada',  value: 'Cancelada' },
+] as const;
+
+type StatusFilter = typeof STATUS_FILTERS[number]['value'];
+
 // ─── Componente ───────────────────────────────────────────────────────────────
 
 const SessionsManager: React.FC = () => {
@@ -39,9 +54,11 @@ const SessionsManager: React.FC = () => {
   const [servicePrices, setServicePrices] = useState<Record<string, number>>({});
   const [staffName,     setStaffName]     = useState('');
 
-  const [loadError,      setLoadError]      = useState<string | null>(null);
-  const [isModalOpen,    setIsModalOpen]    = useState(false);
-  const [formError,      setFormError]      = useState<string | null>(null);
+  const [loadError,       setLoadError]       = useState<string | null>(null);
+  const [statusFilter,    setStatusFilter]    = useState<StatusFilter>('all');
+  const [currentPage,     setCurrentPage]     = useState(1);
+  const [isModalOpen,     setIsModalOpen]     = useState(false);
+  const [formError,       setFormError]       = useState<string | null>(null);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
 
   // Cambio de estado pendiente de confirmación (cuando sesión ya tiene venta)
@@ -197,6 +214,26 @@ const SessionsManager: React.FC = () => {
     showToast('Cita eliminada');
   };
 
+  // ── Filtrado, ordenamiento y paginación ──────────────────────────────────────
+  const filtered = useMemo(() => {
+    const base = statusFilter === 'all'
+      ? sessions
+      : sessions.filter(s => s.status === statusFilter);
+    // Ordenar: hoy primero, luego más recientes
+    return [...base].sort((a, b) => {
+      const aHoy = isToday(a.date) ? 0 : 1;
+      const bHoy = isToday(b.date) ? 0 : 1;
+      if (aHoy !== bHoy) return aHoy - bHoy;
+      return b.date.localeCompare(a.date) || b.time.localeCompare(a.time);
+    });
+  }, [sessions, statusFilter]);
+
+  const totalPages  = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
+  const safePage    = Math.min(currentPage, totalPages);
+  const paginated   = filtered.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE);
+
+  const changeFilter = (f: StatusFilter) => { setStatusFilter(f); setCurrentPage(1); };
+
   // ─────────────────────────────────────────────────────────────────────────────
   return (
     <div className="space-y-6">
@@ -277,73 +314,163 @@ const SessionsManager: React.FC = () => {
         )}
       </div>
 
-      {/* Lista de sesiones */}
-      <div className="grid grid-cols-1 gap-4">
-        {sessions.map((session) => {
-          const esHoy = isToday(session.date);
-          return (
-            <div
-              key={session.id}
-              className={`relative bg-white p-4 sm:p-5 rounded-2xl border-2 transition-all duration-300 flex flex-col sm:flex-row sm:flex-wrap sm:items-center sm:justify-between gap-3 shadow-sm ${
-                esHoy ? 'border-rose-500 bg-rose-50/30 ring-1 ring-rose-200 animate-in fade-in zoom-in-95' : 'border-slate-100'
+      {/* Contenedor principal con marco */}
+      <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+
+        {/* Filtros por estado */}
+        <div className="px-4 pt-4 pb-3 border-b border-slate-100 flex items-center gap-2 flex-wrap">
+          {STATUS_FILTERS.map(f => (
+            <button
+              key={f.value}
+              onClick={() => changeFilter(f.value)}
+              className={`px-3 py-1.5 rounded-full text-xs font-bold transition-colors ${
+                statusFilter === f.value
+                  ? 'bg-indigo-600 text-white shadow-md shadow-indigo-100'
+                  : 'bg-slate-100 text-slate-500 hover:bg-slate-200'
               }`}
             >
-              {esHoy && (
-                <div className="absolute -top-3 left-6 bg-rose-600 text-white text-[10px] font-black px-3 py-1 rounded-full uppercase tracking-widest shadow-md">
-                  Cita para Hoy
-                </div>
+              {f.label}
+              {f.value !== 'all' && (
+                <span className={`ml-1.5 ${statusFilter === f.value ? 'opacity-80' : 'opacity-60'}`}>
+                  ({sessions.filter(s => s.status === f.value).length})
+                </span>
               )}
+              {f.value === 'all' && (
+                <span className={`ml-1.5 ${statusFilter === f.value ? 'opacity-80' : 'opacity-60'}`}>
+                  ({sessions.length})
+                </span>
+              )}
+            </button>
+          ))}
+        </div>
 
-              <div className="flex items-center gap-4 flex-1 min-w-[200px]">
-                <div className={`${esHoy ? 'bg-rose-600 text-white shadow-lg' : 'bg-indigo-50 text-indigo-600'} p-3 rounded-full transition-colors`}>
-                  <CalendarDays size={24} />
-                </div>
-                <div>
-                  <h4 className={`font-bold ${esHoy ? 'text-rose-900' : 'text-slate-800'}`}>
-                    {getPatientName(session.patientId)}
-                  </h4>
-                  <div className="flex items-center gap-2 text-xs text-slate-500 font-medium uppercase tracking-wider">
-                    <UserSquare2 size={12} /> {getProfName(session.professionalId)}
-                  </div>
-                </div>
+        {/* Lista de sesiones */}
+        <div className="p-4 space-y-3 min-h-[320px]">
+          {paginated.length === 0 ? (
+            /* Estado vacío */
+            <div className="flex flex-col items-center justify-center py-16 text-center gap-4">
+              <div className="w-16 h-16 bg-indigo-50 rounded-2xl flex items-center justify-center">
+                <CalendarDays size={32} className="text-indigo-300" />
               </div>
-
-              <div className="flex items-center gap-6 text-sm">
-                <div className={`flex items-center gap-2 font-medium ${esHoy ? 'text-rose-700' : 'text-slate-600'}`}>
-                  <Clock size={16} /> {session.date} - {session.time}
-                </div>
-                <div className={`font-bold px-3 py-1 rounded-lg ${esHoy ? 'bg-rose-100 text-rose-800' : 'bg-slate-100 text-slate-700'}`}>
-                  {session.therapyType}
-                </div>
-              </div>
-
-              <div className="flex items-center gap-3">
-                {!(isTI || permissions.appointments.edit) ? (
-                  <span className={`text-xs font-bold px-3 py-1.5 rounded-full shadow-sm ${statusBadgeClass(session.status)}`}>
-                    {session.status}
-                  </span>
-                ) : (
-                  <select
-                    value={session.status}
-                    onChange={e => updateStatus(session, e.target.value as Session['status'])}
-                    className={`text-xs font-bold px-3 py-1.5 rounded-full border-none cursor-pointer shadow-sm ${statusBadgeClass(session.status)}`}
-                  >
-                    <option value="Programada">Programada</option>
-                    <option value="Confirmada">Confirmada</option>
-                    <option value="Efectuada">Efectuada</option>
-                    <option value="Pagada">Pagada</option>
-                    <option value="Cancelada">Cancelada</option>
-                  </select>
-                )}
-                {(isTI || permissions.appointments.delete) && (
-                  <button onClick={() => handleDelete(session.id)} className="text-slate-300 hover:text-rose-500 p-2 transition-colors">
-                    <Trash2 size={18} />
-                  </button>
-                )}
+              <div>
+                <p className="font-semibold text-slate-600">
+                  {statusFilter === 'all' ? 'No hay citas registradas' : `No hay citas con estado "${statusFilter}"`}
+                </p>
+                <p className="text-sm text-slate-400 mt-1">
+                  {statusFilter === 'all'
+                    ? 'Usa el botón "Agendar Cita" para crear la primera.'
+                    : 'Prueba cambiando el filtro de estado.'}
+                </p>
               </div>
             </div>
-          );
-        })}
+          ) : (
+            paginated.map((session) => {
+              const esHoy = isToday(session.date);
+              return (
+                <div
+                  key={session.id}
+                  className={`relative p-4 sm:p-5 rounded-xl border-2 transition-all duration-300 flex flex-col sm:flex-row sm:flex-wrap sm:items-center sm:justify-between gap-3 ${
+                    esHoy
+                      ? 'border-rose-400 bg-rose-50/40 ring-1 ring-rose-200'
+                      : 'border-slate-100 hover:border-slate-200 hover:shadow-sm'
+                  }`}
+                >
+                  {esHoy && (
+                    <div className="absolute -top-3 left-5 bg-rose-600 text-white text-[10px] font-black px-3 py-1 rounded-full uppercase tracking-widest shadow-md">
+                      Cita para Hoy
+                    </div>
+                  )}
+
+                  <div className="flex items-center gap-4 flex-1 min-w-[200px]">
+                    <div className={`${esHoy ? 'bg-rose-600 text-white shadow-lg' : 'bg-indigo-50 text-indigo-600'} p-3 rounded-full transition-colors shrink-0`}>
+                      <CalendarDays size={22} />
+                    </div>
+                    <div>
+                      <h4 className={`font-bold ${esHoy ? 'text-rose-900' : 'text-slate-800'}`}>
+                        {getPatientName(session.patientId)}
+                      </h4>
+                      <div className="flex items-center gap-2 text-xs text-slate-500 font-medium uppercase tracking-wider mt-0.5">
+                        <UserSquare2 size={11} /> {getProfName(session.professionalId)}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-4 text-sm flex-wrap">
+                    <div className={`flex items-center gap-2 font-medium ${esHoy ? 'text-rose-700' : 'text-slate-600'}`}>
+                      <Clock size={15} /> {session.date} · {session.time}
+                    </div>
+                    <div className={`font-bold px-3 py-1 rounded-lg text-xs ${esHoy ? 'bg-rose-100 text-rose-800' : 'bg-slate-100 text-slate-700'}`}>
+                      {session.therapyType}
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-3">
+                    {!(isTI || permissions.appointments.edit) ? (
+                      <span className={`text-xs font-bold px-3 py-1.5 rounded-full shadow-sm ${statusBadgeClass(session.status)}`}>
+                        {session.status}
+                      </span>
+                    ) : (
+                      <select
+                        value={session.status}
+                        onChange={e => updateStatus(session, e.target.value as Session['status'])}
+                        className={`text-xs font-bold px-3 py-1.5 rounded-full border-none cursor-pointer shadow-sm ${statusBadgeClass(session.status)}`}
+                      >
+                        <option value="Programada">Programada</option>
+                        <option value="Confirmada">Confirmada</option>
+                        <option value="Efectuada">Efectuada</option>
+                        <option value="Pagada">Pagada</option>
+                        <option value="Cancelada">Cancelada</option>
+                      </select>
+                    )}
+                    {(isTI || permissions.appointments.delete) && (
+                      <button onClick={() => handleDelete(session.id)} className="text-slate-300 hover:text-rose-500 p-2 transition-colors">
+                        <Trash2 size={17} />
+                      </button>
+                    )}
+                  </div>
+                </div>
+              );
+            })
+          )}
+        </div>
+
+        {/* Paginación */}
+        {totalPages > 1 && (
+          <div className="px-4 py-3 border-t border-slate-100 flex items-center justify-between gap-2">
+            <span className="text-xs text-slate-400 font-medium">
+              {filtered.length} citas · página {safePage} de {totalPages}
+            </span>
+            <div className="flex items-center gap-1">
+              <button
+                onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                disabled={safePage === 1}
+                className="w-8 h-8 flex items-center justify-center rounded-lg border border-slate-200 text-slate-500 hover:bg-slate-50 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+              >
+                <ChevronLeft size={16} />
+              </button>
+              {Array.from({ length: totalPages }, (_, i) => i + 1).map(p => (
+                <button
+                  key={p}
+                  onClick={() => setCurrentPage(p)}
+                  className={`w-8 h-8 rounded-lg text-xs font-bold transition-colors ${
+                    p === safePage
+                      ? 'bg-indigo-600 text-white shadow-md'
+                      : 'border border-slate-200 text-slate-500 hover:bg-slate-50'
+                  }`}
+                >
+                  {p}
+                </button>
+              ))}
+              <button
+                onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                disabled={safePage === totalPages}
+                className="w-8 h-8 flex items-center justify-center rounded-lg border border-slate-200 text-slate-500 hover:bg-slate-50 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+              >
+                <ChevronRight size={16} />
+              </button>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Modal nueva cita */}
