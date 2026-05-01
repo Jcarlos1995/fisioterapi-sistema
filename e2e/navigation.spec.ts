@@ -61,11 +61,10 @@ test.describe('Navegación del panel interno', () => {
   });
 
   // ── Logout ───────────────────────────────────────────────────────────────────
-  test('cierra sesión y vuelve al formulario de login', async ({ page }) => {
+  test('cierra sesión y redirige al landing', async ({ page }) => {
     // El botón tiene texto visible cuando el sidebar está expandido (default)
     await page.getByRole('button', { name: /cerrar sesión/i }).click();
-    await expect(
-      page.getByPlaceholder('profesional@fisioterapi.com')
-    ).toBeVisible({ timeout: 15_000 });
+    // handleLogout hace window.location.replace(LANDING_URL) → navega a fisioterapichepen.com
+    await page.waitForURL(/fisioterapichepen\.com/, { timeout: 15_000 });
   });
 });
