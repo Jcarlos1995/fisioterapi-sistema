@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Package, Plus, Minus, Trash2, AlertTriangle, WifiOff } from 'lucide-react';
+import { SkeletonHeader, SkeletonTableRows } from './SkeletonLoader';
 import { Product } from '../types';
 import { db } from '../firebaseConfig';
 import { collection, onSnapshot, addDoc, deleteDoc, doc, updateDoc } from 'firebase/firestore';
@@ -13,6 +14,7 @@ const ProductsManager: React.FC = () => {
   const { showToast } = useToast();
   const [products, setProducts] = useState<Product[]>([]);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   useEscKey(() => setIsModalOpen(false), isModalOpen);
@@ -28,6 +30,7 @@ const ProductsManager: React.FC = () => {
       collection(db, 'products'),
       (snapshot) => {
         setLoadError(null);
+        setIsLoading(false);
         setProducts(snapshot.docs.map(d => ({ id: d.id, ...d.data() }) as Product));
       },
       (err) => {
@@ -103,6 +106,12 @@ const ProductsManager: React.FC = () => {
           onCancel={() => setConfirmDeleteId(null)}
         />
       )}
+      {isLoading ? (
+        <div className="space-y-4">
+          <SkeletonHeader />
+          <SkeletonTableRows rows={6} cols={4} />
+        </div>
+      ) : <>
       <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-3">
         <div>
           <h2 className="text-2xl font-bold text-slate-800">Inventario</h2>
@@ -190,6 +199,7 @@ const ProductsManager: React.FC = () => {
           </div>
         </div>
       )}
+      </>}
     </div>
   );
 };

@@ -11,6 +11,7 @@ import { useToast } from '../context/ToastContext';
 import useEscKey from '../hooks/useEscKey';
 import ConfirmModal from './ConfirmModal';
 import { isToday, shouldAutoCreateSale, shouldWarnOnLeave, statusBadgeClass } from '../utils/session';
+import { SkeletonHeader, SkeletonSessionCards } from './SkeletonLoader';
 
 // ─── Tipos locales ─────────────────────────────────────────────────────────────
 
@@ -55,6 +56,7 @@ const SessionsManager: React.FC = () => {
   const [staffName,     setStaffName]     = useState('');
 
   const [loadError,       setLoadError]       = useState<string | null>(null);
+  const [isLoading,       setIsLoading]       = useState(true);
   const [statusFilter,    setStatusFilter]    = useState<StatusFilter>('all');
   const [currentPage,     setCurrentPage]     = useState(1);
   const [isModalOpen,     setIsModalOpen]     = useState(false);
@@ -83,7 +85,7 @@ const SessionsManager: React.FC = () => {
       setLoadError('No se pudieron cargar los datos. Verifica tu conexión e intenta de nuevo.');
     };
 
-    const unsubSessions      = onSnapshot(collection(db, 'sessions'),      snap => { setLoadError(null); setSessions(snap.docs.map(d => ({ id: d.id, ...d.data() } as Session))); },      onErr('sessions'));
+    const unsubSessions      = onSnapshot(collection(db, 'sessions'),      snap => { setLoadError(null); setIsLoading(false); setSessions(snap.docs.map(d => ({ id: d.id, ...d.data() } as Session))); },      onErr('sessions'));
     const unsubPatients      = onSnapshot(collection(db, 'patients'),      snap => setPatients(snap.docs.map(d => ({ id: d.id, ...d.data() } as Patient))),      onErr('patients'));
     const unsubProfessionals = onSnapshot(collection(db, 'professionals'), snap => setProfessionals(snap.docs.map(d => ({ id: d.id, ...d.data() } as Professional))), onErr('professionals'));
     const unsubTasks         = onSnapshot(collection(db, 'therapyTasks'),  snap => setTherapyTasks(snap.docs.map(d => ({ id: d.id, ...d.data() } as TherapyTask))),  onErr('therapyTasks'));
@@ -298,6 +300,12 @@ const SessionsManager: React.FC = () => {
         </div>
       )}
 
+      {isLoading ? (
+        <div className="space-y-4">
+          <SkeletonHeader />
+          <SkeletonSessionCards rows={8} />
+        </div>
+      ) : <>
       {/* Cabecera */}
       <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-3">
         <div>
@@ -529,6 +537,7 @@ const SessionsManager: React.FC = () => {
           </div>
         </div>
       )}
+      </>}
     </div>
   );
 };

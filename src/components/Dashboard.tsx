@@ -11,6 +11,7 @@ import StatCard from './StatCard';
 import { useDashboardData } from '../hooks/useDashboardData';
 import { useAuth } from '../context/AuthContext';
 import { useToast } from '../context/ToastContext';
+import { SkeletonStatCards, SkeletonCharts, SkeletonHeader } from './SkeletonLoader';
 
 const MONTHS = ["Enero","Febrero","Marzo","Abril","Mayo","Junio","Julio","Agosto","Septiembre","Octubre","Noviembre","Diciembre"];
 const COLORS  = ['#10b981', '#3b82f6', '#6366f1', '#f59e0b'];
@@ -34,7 +35,7 @@ const Dashboard: React.FC = () => {
   const [loadingIA,       setLoadingIA]        = useState(false);
   const [cancellations, setCancellations] = useState<CancellationNotification[]>([]);
 
-  const { stats, chartData, webPendingAppointments, loadError } = useDashboardData(selectedMonth);
+  const { stats, chartData, webPendingAppointments, loadError, isLoading } = useDashboardData(selectedMonth);
 
   useEffect(() => {
     const q = query(
@@ -196,19 +197,21 @@ const Dashboard: React.FC = () => {
         </div>
       </div>
 
-      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-3 sm:gap-4">
-        <StatCard icon={<Users className="text-blue-600"/>}        label="Pacientes"       value={stats.patients} />
-        <StatCard icon={<UserSquare2 className="text-emerald-600"/>} label="Profesionales"  value={stats.professionals} />
-        <StatCard icon={<Calendar className="text-orange-500"/>}   label="Efectuadas"      value={stats.doneSessions} />
-        <StatCard icon={<Activity className="text-indigo-600"/>}   label="Total Sesiones"  value={stats.totalSessions} />
-        <StatCard
-          icon={<Package className={stats.lowStockItems > 0 ? "text-rose-600 animate-bounce" : "text-slate-600"}/>}
-          label="Valor Inventario"
-          value={`S/ ${stats.inventoryValue.toFixed(2)}`}
-        />
-      </div>
+      {isLoading ? <SkeletonStatCards /> : (
+        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-3 sm:gap-4">
+          <StatCard icon={<Users className="text-blue-600"/>}        label="Pacientes"       value={stats.patients} />
+          <StatCard icon={<UserSquare2 className="text-emerald-600"/>} label="Profesionales"  value={stats.professionals} />
+          <StatCard icon={<Calendar className="text-orange-500"/>}   label="Efectuadas"      value={stats.doneSessions} />
+          <StatCard icon={<Activity className="text-indigo-600"/>}   label="Total Sesiones"  value={stats.totalSessions} />
+          <StatCard
+            icon={<Package className={stats.lowStockItems > 0 ? "text-rose-600 animate-bounce" : "text-slate-600"}/>}
+            label="Valor Inventario"
+            value={`S/ ${stats.inventoryValue.toFixed(2)}`}
+          />
+        </div>
+      )}
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+      {isLoading ? <SkeletonCharts /> : <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
         <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100">
           <h3 className="font-bold text-slate-700 mb-6">Sesiones Efectuadas por Especialista</h3>
           <div className="h-64">
@@ -243,7 +246,7 @@ const Dashboard: React.FC = () => {
             <div className="flex items-center gap-1"><div className="w-3 h-3 bg-blue-500 rounded-full"/><span className="text-[10px] font-bold text-slate-500 uppercase">Otras</span></div>
           </div>
         </div>
-      </div>
+      </div>}
 
       <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100">
         <div className="flex items-center justify-between gap-3 mb-4">

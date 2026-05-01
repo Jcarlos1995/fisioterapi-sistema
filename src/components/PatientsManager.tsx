@@ -8,6 +8,7 @@ import { useToast } from '../context/ToastContext';
 import useEscKey from '../hooks/useEscKey';
 import { validateBirthDate } from '../utils/validation';
 import ConfirmModal from './ConfirmModal';
+import { SkeletonHeader, SkeletonSearchBar, SkeletonTableRows } from './SkeletonLoader';
 
 const PatientsManager: React.FC = () => {
   const { isTI, permissions } = useAuth();
@@ -15,6 +16,7 @@ const PatientsManager: React.FC = () => {
   const [patients, setPatients] = useState<Patient[]>([]);
   const [professionals, setProfessionals] = useState<Professional[]>([]);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [currentPatient, setCurrentPatient] = useState<Partial<Patient>>({});
@@ -31,6 +33,7 @@ const PatientsManager: React.FC = () => {
       collection(db, "patients"),
       (snapshot) => {
         setLoadError(null);
+        setIsLoading(false);
         setPatients(snapshot.docs.map(d => ({ ...d.data(), id: d.id }) as Patient));
       },
       onErr,
@@ -148,6 +151,13 @@ const PatientsManager: React.FC = () => {
           onCancel={() => setConfirmDeleteId(null)}
         />
       )}
+      {isLoading ? (
+        <div className="space-y-4">
+          <SkeletonHeader />
+          <SkeletonSearchBar />
+          <SkeletonTableRows rows={6} cols={5} />
+        </div>
+      ) : <>
       <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-3">
         <div>
           <h1 className="text-2xl font-bold text-slate-800">Pacientes</h1>
@@ -285,6 +295,7 @@ const PatientsManager: React.FC = () => {
           </div>
         </div>
       )}
+      </>}
     </div>
   );
 };

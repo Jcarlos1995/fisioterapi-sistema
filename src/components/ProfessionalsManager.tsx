@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { UserSquare2, Plus, Trash2, Mail, Phone, Pencil, ShieldCheck, Users, WifiOff } from 'lucide-react';
+import { SkeletonHeader, SkeletonProfessionalCards } from './SkeletonLoader';
 import { Professional, UserPermissions, DEFAULT_PERMISSIONS, ModulePermissions } from '../types';
 import { db } from '../firebaseConfig';
 import { collection, onSnapshot, addDoc, deleteDoc, doc, updateDoc, getDocs } from 'firebase/firestore';
@@ -54,6 +55,7 @@ const ProfessionalsManager: React.FC = () => {
   const { showToast } = useToast();
   const [professionals, setProfessionals] = useState<Professional[]>([]);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [newProf, setNewProf] = useState(EMPTY_FORM);
@@ -74,6 +76,7 @@ const ProfessionalsManager: React.FC = () => {
       collection(db, 'professionals'),
       (snapshot) => {
         setLoadError(null);
+        setIsLoading(false);
         setProfessionals(snapshot.docs.map(d => ({ id: d.id, ...d.data() }) as Professional));
       },
       (err) => {
@@ -183,6 +186,12 @@ const ProfessionalsManager: React.FC = () => {
           onCancel={() => setConfirmDeleteId(null)}
         />
       )}
+      {isLoading ? (
+        <div className="space-y-4">
+          <SkeletonHeader />
+          <SkeletonProfessionalCards rows={4} />
+        </div>
+      ) : <>
       <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-3">
         <div>
           <h2 className="text-2xl font-bold text-slate-800">Equipo Profesional</h2>
@@ -477,6 +486,7 @@ const ProfessionalsManager: React.FC = () => {
           </div>
         </div>
       )}
+      </>}
     </div>
   );
 };

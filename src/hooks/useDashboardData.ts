@@ -24,6 +24,7 @@ export const useDashboardData = (selectedMonth: number) => {
   const [chartData, setChartData]                       = useState<ChartEntry[]>([]);
   const [webPendingAppointments, setWebPendingAppointments] = useState(0);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
     let cancelled = false;
@@ -81,6 +82,7 @@ export const useDashboardData = (selectedMonth: number) => {
 
         if (cancelled) return;
         setLoadError(null);
+        setIsLoading(false);
         setStats(prev => ({
           ...prev,
           patients:      pSnap.size,
@@ -93,6 +95,7 @@ export const useDashboardData = (selectedMonth: number) => {
         if (!cancelled) {
           console.error("Error cargando datos del dashboard:", error);
           setLoadError('No se pudieron cargar los datos del panel. Verifica tu conexión e intenta de nuevo.');
+          setIsLoading(false);
         }
       }
     };
@@ -105,5 +108,5 @@ export const useDashboardData = (selectedMonth: number) => {
     };
   }, [selectedMonth]);
 
-  return { stats, chartData, webPendingAppointments, loadError };
+  return { stats, chartData, webPendingAppointments, loadError, isLoading };
 };
