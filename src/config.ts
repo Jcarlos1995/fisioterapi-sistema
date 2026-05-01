@@ -1,4 +1,4 @@
-export const LANDING_URL  = 'https://fisioterapichepen.com';
+export const LANDING_URL  = 'https://www.fisioterapichepen.com';
 export const BOOKING_URL  = 'https://sistema.fisioterapichepen.com/#/agendar';
 export const PORTAL_URL   = 'https://sistema.fisioterapichepen.com/#/portal';
 export const SISTEMA_URL  = 'https://sistema.fisioterapichepen.com/';

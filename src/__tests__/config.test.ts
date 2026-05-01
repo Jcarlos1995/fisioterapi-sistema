@@ -17,7 +17,7 @@ describe('URLs de configuración del sistema', () => {
   });
 
   it('LANDING_URL apunta al dominio principal de la clínica', () => {
-    expect(LANDING_URL).toContain('fisioterapichepen.com');
+    expect(LANDING_URL).toContain('www.fisioterapichepen.com');
   });
 
   it('BOOKING_URL apunta al subdominio del sistema', () => {
