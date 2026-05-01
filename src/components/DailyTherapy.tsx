@@ -5,7 +5,7 @@ import {
 } from 'firebase/firestore';
 import {
   CheckSquare, Square, ClipboardList, Search, Plus, X,
-  Settings, History, User, Trash2, Calendar,
+  Settings, History, User, Trash2, Calendar, WifiOff,
 } from 'lucide-react';
 import { db } from '../firebaseConfig';
 import { useAuth } from '../context/AuthContext';
@@ -70,6 +70,12 @@ const DailyTherapy: React.FC = () => {
   // Profesionales con permiso pueden tachar tareas como hechas
   const canMark = !isViewer && (isTI || role === 'admin' || permissions.dailyTherapy.edit);
 
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const onSnapErr = (label: string) => (err: Error) => {
+    console.error(`onSnapshot [${label}]:`, err);
+    setLoadError('No se pudieron cargar los datos. Verifica tu conexión e intenta de nuevo.');
+  };
+
   // ─── Nombre del profesional logueado ────────────────────────────────────────
   const [professionalName, setProfessionalName] = useState('');
   useEffect(() => {
@@ -90,8 +96,10 @@ const DailyTherapy: React.FC = () => {
   useEffect(() => {
     return onSnapshot(
       query(collection(db, 'therapyTasks'), orderBy('createdAt', 'desc')),
-      snap => setTasks(snap.docs.map(d => ({ id: d.id, ...d.data() } as TherapyTask)))
+      snap => { setLoadError(null); setTasks(snap.docs.map(d => ({ id: d.id, ...d.data() } as TherapyTask))); },
+      onSnapErr('therapyTasks'),
     );
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
   const activeTasks = tasks.filter(t => t.active);
 
@@ -150,8 +158,10 @@ const DailyTherapy: React.FC = () => {
   useEffect(() => {
     return onSnapshot(
       query(collection(db, 'patients'), orderBy('name')),
-      snap => setPatients(snap.docs.map(d => ({ id: d.id, ...d.data() } as Patient)))
+      snap => setPatients(snap.docs.map(d => ({ id: d.id, ...d.data() } as Patient))),
+      onSnapErr('patients'),
     );
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const filteredPatients = useMemo(() => {
@@ -175,8 +185,10 @@ const DailyTherapy: React.FC = () => {
         where('patientId', '==', selectedPatientId),
         where('date', '==', TODAY)
       ),
-      snap => setTodayTasks(snap.docs.map(d => ({ id: d.id, ...d.data() } as TherapyPatientTask)))
+      snap => setTodayTasks(snap.docs.map(d => ({ id: d.id, ...d.data() } as TherapyPatientTask))),
+      onSnapErr('todayTasks'),
     );
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedPatientId]);
 
   // ─── Historial filtrado por fecha ────────────────────────────────────────────
@@ -196,8 +208,10 @@ const DailyTherapy: React.FC = () => {
       snap => {
         setHistoryTasks(snap.docs.map(d => ({ id: d.id, ...d.data() } as TherapyPatientTask)));
         setLoadingHistory(false);
-      }
+      },
+      (err) => { onSnapErr('historyTasks')(err); setLoadingHistory(false); },
     );
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedPatientId, historyDate]);
 
   // ─── Operaciones pendientes ───────────────────────────────────────────────────
@@ -265,6 +279,21 @@ const DailyTherapy: React.FC = () => {
   // ─── Render ───────────────────────────────────────────────────────────────────
   return (
     <div className="space-y-6">
+
+      {/* Banner de error de carga */}
+      {loadError && (
+        <div className="flex items-center gap-3 bg-rose-50 border border-rose-200 text-rose-700 px-4 py-3 rounded-xl text-sm font-medium">
+          <WifiOff size={18} className="shrink-0" />
+          <span>{loadError}</span>
+          <button
+            onClick={() => setLoadError(null)}
+            className="ml-auto text-rose-400 hover:text-rose-600 transition-colors"
+            aria-label="Cerrar aviso"
+          >
+            ✕
+          </button>
+        </div>
+      )}
 
       {/* ── Cabecera ── */}
       <div className="flex items-center justify-between flex-wrap gap-3">

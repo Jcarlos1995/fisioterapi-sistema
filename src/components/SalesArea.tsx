@@ -5,7 +5,7 @@ import {
 } from 'firebase/firestore';
 import {
   Lock, Plus, Settings2, Wrench, Package,
-  TrendingUp, Search, X, ChevronDown, BadgeDollarSign, User, CalendarRange, Trash2,
+  TrendingUp, Search, X, ChevronDown, BadgeDollarSign, User, CalendarRange, Trash2, WifiOff,
 } from 'lucide-react';
 import { db } from '../firebaseConfig';
 import { useAuth } from '../context/AuthContext';
@@ -83,6 +83,7 @@ const SalesArea: React.FC = () => {
   const { user, isTI, role } = useAuth();
   const { showToast } = useToast();
   const canAccess = isTI || role === 'admin';
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   // Nombre del profesional logueado
   const [staffName, setStaffName] = useState('');
@@ -105,11 +106,17 @@ const SalesArea: React.FC = () => {
   }, []);
 
   // ── Tareas globales (servicios del catálogo) ─────────────────────────────────
+  const onSnapErr = (label: string) => (err: Error) => {
+    console.error(`onSnapshot [${label}]:`, err);
+    setLoadError('No se pudieron cargar los datos. Verifica tu conexión e intenta de nuevo.');
+  };
+
   const [therapyTasks, setTherapyTasks] = useState<TherapyTask[]>([]);
   useEffect(() => {
     return onSnapshot(
       query(collection(db, 'therapyTasks'), orderBy('createdAt', 'desc')),
-      snap => setTherapyTasks(snap.docs.map(d => ({ id: d.id, ...d.data() } as TherapyTask)))
+      snap => setTherapyTasks(snap.docs.map(d => ({ id: d.id, ...d.data() } as TherapyTask))),
+      onSnapErr('therapyTasks'),
     );
   }, []);
   const activeTasks = therapyTasks.filter(t => t.active);
@@ -117,9 +124,12 @@ const SalesArea: React.FC = () => {
   // ── Productos ────────────────────────────────────────────────────────────────
   const [products, setProducts] = useState<PortalProduct[]>([]);
   useEffect(() => {
-    getDocs(query(collection(db, 'products'), orderBy('name'))).then(snap => {
-      setProducts(snap.docs.map(d => ({ id: d.id, ...d.data() } as PortalProduct)));
-    });
+    getDocs(query(collection(db, 'products'), orderBy('name')))
+      .then(snap => setProducts(snap.docs.map(d => ({ id: d.id, ...d.data() } as PortalProduct))))
+      .catch(err => {
+        console.error('getDocs [products]:', err);
+        setLoadError('No se pudieron cargar los productos. Verifica tu conexión.');
+      });
   }, []);
 
   // ── Pacientes ────────────────────────────────────────────────────────────────
@@ -127,7 +137,8 @@ const SalesArea: React.FC = () => {
   useEffect(() => {
     return onSnapshot(
       query(collection(db, 'patients'), orderBy('name')),
-      snap => setPatients(snap.docs.map(d => ({ id: d.id, ...d.data() } as Patient)))
+      snap => { setLoadError(null); setPatients(snap.docs.map(d => ({ id: d.id, ...d.data() } as Patient))); },
+      onSnapErr('patients'),
     );
   }, []);
 
@@ -136,7 +147,8 @@ const SalesArea: React.FC = () => {
   useEffect(() => {
     return onSnapshot(
       query(collection(db, 'sales'), orderBy('date', 'desc'), orderBy('createdAt', 'desc')),
-      snap => setSales(snap.docs.map(d => ({ id: d.id, ...d.data() } as Sale)))
+      snap => setSales(snap.docs.map(d => ({ id: d.id, ...d.data() } as Sale))),
+      onSnapErr('sales'),
     );
   }, []);
 
@@ -197,6 +209,21 @@ const SalesArea: React.FC = () => {
   // ─────────────────────────────────────────────────────────────────────────────
   return (
     <div className="space-y-6">
+
+      {/* Banner de error de carga */}
+      {loadError && (
+        <div className="flex items-center gap-3 bg-rose-50 border border-rose-200 text-rose-700 px-4 py-3 rounded-xl text-sm font-medium">
+          <WifiOff size={18} className="shrink-0" />
+          <span>{loadError}</span>
+          <button
+            onClick={() => setLoadError(null)}
+            className="ml-auto text-rose-400 hover:text-rose-600 transition-colors"
+            aria-label="Cerrar aviso"
+          >
+            ✕
+          </button>
+        </div>
+      )}
 
       {/* Cabecera */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
