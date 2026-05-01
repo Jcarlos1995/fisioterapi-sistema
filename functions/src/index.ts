@@ -237,7 +237,7 @@ function parseSessionDateTime(date: string, time: string): Date | null {
 interface BookingInput {
   name:        string;
   phone:       string;
-  email:       string;
+  email?:      string;
   dni:         string;
   age:         string;
   birthDate?:  string;
@@ -297,7 +297,7 @@ export const createBooking = onCall(
     const cleanBirthDate = (birthDate || "").trim();
 
     // Validación básica de campos requeridos
-    if (!name?.trim() || !phone?.trim() || !email?.trim() || !dni?.trim() || !startStr) {
+    if (!name?.trim() || !phone?.trim() || !dni?.trim() || !startStr) {
       throw new HttpsError("invalid-argument", "Todos los campos son obligatorios.");
     }
 
@@ -336,7 +336,6 @@ export const createBooking = onCall(
       const existingPatient = patientSnap.docs[0].data() as { birthDate?: string };
       const updatePayload: Record<string, unknown> = {
         name:  name.trim(),
-        email: email.trim(),
         phone: phone.trim(),
         age:   parseInt(age) || 0,
       };
@@ -348,7 +347,6 @@ export const createBooking = onCall(
     } else {
       const newPatient = await db.collection("patients").add({
         name:           name.trim(),
-        email:          email.trim(),
         phone:          phone.trim(),
         dni:            cleanDni,
         age:            parseInt(age) || 0,
@@ -434,7 +432,7 @@ interface RegisterPatientPortalInput {
   birthDate: string;
   age: number;
   phone: string;
-  email: string;
+  email?: string;
 }
 
 export const validatePatientLogin = onCall(
@@ -562,7 +560,7 @@ export const registerPatientPortal = onCall(
     const cleanPhone = (phone || "").trim();
     const cleanEmail = (email || "").trim().toLowerCase();
 
-    if (!cleanName || !cleanDni || !cleanBirthDate || !cleanPhone || !cleanEmail || !Number.isFinite(parsedAge)) {
+    if (!cleanName || !cleanDni || !cleanBirthDate || !cleanPhone || !Number.isFinite(parsedAge)) {
       throw new HttpsError("invalid-argument", "Todos los campos son obligatorios.");
     }
 
@@ -585,7 +583,6 @@ export const registerPatientPortal = onCall(
       dni: cleanDni,
       birthDate: cleanBirthDate,
       phone: cleanPhone,
-      email: cleanEmail,
       age: parsedAge,
       professionalId: "",
       createdAt: new Date().toISOString(),
@@ -634,13 +631,29 @@ export const getPatientAppointments = onCall(
     }
 
     const patient = patientSnap.data() as { dni?: string };
-    if ((patient.dni || "").trim().toUpperCase() !== cleanDni) {
+    const storedDni = (patient.dni || "").trim().toUpperCase();
+    if (storedDni !== cleanDni) {
       throw new HttpsError("permission-denied", "No autorizado para consultar estas citas.");
     }
 
+    // Buscar TODOS los registros de paciente con el mismo DNI (puede haber duplicados
+    // si el admin creó un registro manualmente y el paciente también se registró online).
+    // Así cubrimos el caso en que las sesiones estén vinculadas a un ID distinto.
+    const allPatientsWithDni = await db
+      .collection("patients")
+      .where("dni", "==", storedDni)
+      .get();
+
+    const allPatientIds = Array.from(
+      new Set([
+        cleanPatientId,
+        ...allPatientsWithDni.docs.map((d) => d.id),
+      ])
+    ).slice(0, 30); // Firestore 'in' soporta máx 30 valores
+
     const sessionsSnap = await db
       .collection("sessions")
-      .where("patientId", "==", cleanPatientId)
+      .where("patientId", "in", allPatientIds)
       .get();
 
     const sessions: PatientSession[] = sessionsSnap.docs
@@ -763,12 +776,13 @@ export const reserveProducts = onCall(
       throw new HttpsError("invalid-argument", "Datos de separado incompletos.");
     }
 
-    await sendProductReservationWhatsApp({
+    // Notificar a la clínica por WhatsApp (no bloquea si falla)
+    sendProductReservationWhatsApp({
       items:        validItems,
       patientName:  patientName.trim(),
       patientDni:   patientDni.trim().toUpperCase(),
       patientPhone: (patientPhone || "").trim(),
-    });
+    }).catch((err) => console.error("sendProductReservationWhatsApp inesperado:", err));
 
     return { success: true };
   }
