@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Package, Plus, Minus, Trash2, AlertTriangle } from 'lucide-react';
+import { Package, Plus, Minus, Trash2, AlertTriangle, WifiOff } from 'lucide-react';
 import { Product } from '../types';
 import { db } from '../firebaseConfig';
 import { collection, onSnapshot, addDoc, deleteDoc, doc, updateDoc } from 'firebase/firestore';
@@ -12,6 +12,7 @@ const ProductsManager: React.FC = () => {
   const { isTI, permissions } = useAuth();
   const { showToast } = useToast();
   const [products, setProducts] = useState<Product[]>([]);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   useEscKey(() => setIsModalOpen(false), isModalOpen);
@@ -23,13 +24,17 @@ const ProductsManager: React.FC = () => {
   });
 
   useEffect(() => {
-    const unsub = onSnapshot(collection(db, 'products'), (snapshot) => {
-      const productsData = snapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data()
-      })) as Product[];
-      setProducts(productsData);
-    });
+    const unsub = onSnapshot(
+      collection(db, 'products'),
+      (snapshot) => {
+        setLoadError(null);
+        setProducts(snapshot.docs.map(d => ({ id: d.id, ...d.data() }) as Product));
+      },
+      (err) => {
+        console.error('onSnapshot [products]:', err);
+        setLoadError('No se pudo cargar el inventario. Verifica tu conexión e intenta de nuevo.');
+      },
+    );
     return () => unsub();
   }, []);
 
@@ -76,6 +81,21 @@ const ProductsManager: React.FC = () => {
 
   return (
     <div className="space-y-6">
+      {/* Banner de error de carga */}
+      {loadError && (
+        <div className="flex items-center gap-3 bg-rose-50 border border-rose-200 text-rose-700 px-4 py-3 rounded-xl text-sm font-medium">
+          <WifiOff size={18} className="shrink-0" />
+          <span>{loadError}</span>
+          <button
+            onClick={() => setLoadError(null)}
+            className="ml-auto text-rose-400 hover:text-rose-600 transition-colors"
+            aria-label="Cerrar aviso"
+          >
+            ✕
+          </button>
+        </div>
+      )}
+
       {confirmDeleteId && (
         <ConfirmModal
           message="¿Eliminar este producto? Esta acción no se puede deshacer."

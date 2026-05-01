@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { CalendarDays, Plus, Trash2, Clock, UserSquare2, AlertTriangle } from 'lucide-react';
+import { CalendarDays, Plus, Trash2, Clock, UserSquare2, AlertTriangle, WifiOff } from 'lucide-react';
 import { Session, Patient, Professional } from '../types';
 import { db } from '../firebaseConfig';
 import {
@@ -39,6 +39,7 @@ const SessionsManager: React.FC = () => {
   const [servicePrices, setServicePrices] = useState<Record<string, number>>({});
   const [staffName,     setStaffName]     = useState('');
 
+  const [loadError,      setLoadError]      = useState<string | null>(null);
   const [isModalOpen,    setIsModalOpen]    = useState(false);
   const [formError,      setFormError]      = useState<string | null>(null);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
@@ -60,9 +61,12 @@ const SessionsManager: React.FC = () => {
 
   // ── Carga de datos ───────────────────────────────────────────────────────────
   useEffect(() => {
-    const onErr = (label: string) => (err: Error) => console.error(`onSnapshot [${label}]:`, err);
+    const onErr = (label: string) => (err: Error) => {
+      console.error(`onSnapshot [${label}]:`, err);
+      setLoadError('No se pudieron cargar los datos. Verifica tu conexión e intenta de nuevo.');
+    };
 
-    const unsubSessions      = onSnapshot(collection(db, 'sessions'),      snap => setSessions(snap.docs.map(d => ({ id: d.id, ...d.data() } as Session))),      onErr('sessions'));
+    const unsubSessions      = onSnapshot(collection(db, 'sessions'),      snap => { setLoadError(null); setSessions(snap.docs.map(d => ({ id: d.id, ...d.data() } as Session))); },      onErr('sessions'));
     const unsubPatients      = onSnapshot(collection(db, 'patients'),      snap => setPatients(snap.docs.map(d => ({ id: d.id, ...d.data() } as Patient))),      onErr('patients'));
     const unsubProfessionals = onSnapshot(collection(db, 'professionals'), snap => setProfessionals(snap.docs.map(d => ({ id: d.id, ...d.data() } as Professional))), onErr('professionals'));
     const unsubTasks         = onSnapshot(collection(db, 'therapyTasks'),  snap => setTherapyTasks(snap.docs.map(d => ({ id: d.id, ...d.data() } as TherapyTask))),  onErr('therapyTasks'));
@@ -239,6 +243,21 @@ const SessionsManager: React.FC = () => {
               </button>
             </div>
           </div>
+        </div>
+      )}
+
+      {/* Banner de error de carga */}
+      {loadError && (
+        <div className="flex items-center gap-3 bg-rose-50 border border-rose-200 text-rose-700 px-4 py-3 rounded-xl text-sm font-medium">
+          <WifiOff size={18} className="shrink-0" />
+          <span>{loadError}</span>
+          <button
+            onClick={() => setLoadError(null)}
+            className="ml-auto text-rose-400 hover:text-rose-600 transition-colors"
+            aria-label="Cerrar aviso"
+          >
+            ✕
+          </button>
         </div>
       )}
 

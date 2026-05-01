@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { UserSquare2, Plus, Trash2, Mail, Phone, Pencil, ShieldCheck, Users } from 'lucide-react';
+import { UserSquare2, Plus, Trash2, Mail, Phone, Pencil, ShieldCheck, Users, WifiOff } from 'lucide-react';
 import { Professional, UserPermissions, DEFAULT_PERMISSIONS, ModulePermissions } from '../types';
 import { db } from '../firebaseConfig';
 import { collection, onSnapshot, addDoc, deleteDoc, doc, updateDoc, getDocs } from 'firebase/firestore';
@@ -53,6 +53,7 @@ const ProfessionalsManager: React.FC = () => {
   const { user, isViewer, isTI, permissions } = useAuth();
   const { showToast } = useToast();
   const [professionals, setProfessionals] = useState<Professional[]>([]);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [newProf, setNewProf] = useState(EMPTY_FORM);
@@ -69,13 +70,17 @@ const ProfessionalsManager: React.FC = () => {
   useEscKey(closeModal, isModalOpen && !isUsersModalOpen);
 
   useEffect(() => {
-    const unsub = onSnapshot(collection(db, 'professionals'), (snapshot) => {
-      const profsData = snapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data()
-      })) as Professional[];
-      setProfessionals(profsData);
-    });
+    const unsub = onSnapshot(
+      collection(db, 'professionals'),
+      (snapshot) => {
+        setLoadError(null);
+        setProfessionals(snapshot.docs.map(d => ({ id: d.id, ...d.data() }) as Professional));
+      },
+      (err) => {
+        console.error('onSnapshot [professionals]:', err);
+        setLoadError('No se pudieron cargar los profesionales. Verifica tu conexión e intenta de nuevo.');
+      },
+    );
     return () => unsub();
   }, []);
 
@@ -156,6 +161,21 @@ const ProfessionalsManager: React.FC = () => {
 
   return (
     <div className="space-y-6">
+      {/* Banner de error de carga */}
+      {loadError && (
+        <div className="flex items-center gap-3 bg-rose-50 border border-rose-200 text-rose-700 px-4 py-3 rounded-xl text-sm font-medium">
+          <WifiOff size={18} className="shrink-0" />
+          <span>{loadError}</span>
+          <button
+            onClick={() => setLoadError(null)}
+            className="ml-auto text-rose-400 hover:text-rose-600 transition-colors"
+            aria-label="Cerrar aviso"
+          >
+            ✕
+          </button>
+        </div>
+      )}
+
       {confirmDeleteId && (
         <ConfirmModal
           message="¿Eliminar este profesional? Esta acción no se puede deshacer."

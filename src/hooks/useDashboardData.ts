@@ -23,24 +23,35 @@ export const useDashboardData = (selectedMonth: number) => {
   });
   const [chartData, setChartData]                       = useState<ChartEntry[]>([]);
   const [webPendingAppointments, setWebPendingAppointments] = useState(0);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
 
-    const unsubProducts = onSnapshot(collection(db, 'products'), (snapshot) => {
-      let totalValue   = 0;
-      let criticalItems = 0;
-      snapshot.forEach(doc => {
-        const { price, stock } = doc.data();
-        totalValue    += (Number(price) || 0) * (Number(stock) || 0);
-        if ((Number(stock) || 0) < 5) criticalItems++;
-      });
-      setStats(prev => ({ ...prev, inventoryValue: totalValue, lowStockItems: criticalItems }));
-    });
+    const onSnapErr = (label: string) => (err: Error) => {
+      console.error(`onSnapshot [${label}]:`, err);
+      if (!cancelled) setLoadError('No se pudieron cargar algunos datos del panel. Verifica tu conexión.');
+    };
+
+    const unsubProducts = onSnapshot(
+      collection(db, 'products'),
+      (snapshot) => {
+        let totalValue    = 0;
+        let criticalItems = 0;
+        snapshot.forEach(doc => {
+          const { price, stock } = doc.data();
+          totalValue    += (Number(price) || 0) * (Number(stock) || 0);
+          if ((Number(stock) || 0) < 5) criticalItems++;
+        });
+        setStats(prev => ({ ...prev, inventoryValue: totalValue, lowStockItems: criticalItems }));
+      },
+      onSnapErr('products'),
+    );
 
     const unsubWebCitas = onSnapshot(
       query(collection(db, 'sessions'), where('type', '==', 'online-booking'), where('status', '==', 'Programada')),
-      (snapshot) => setWebPendingAppointments(snapshot.size)
+      (snapshot) => setWebPendingAppointments(snapshot.size),
+      onSnapErr('sessions-web'),
     );
 
     const fetchData = async () => {
@@ -69,6 +80,7 @@ export const useDashboardData = (selectedMonth: number) => {
         }));
 
         if (cancelled) return;
+        setLoadError(null);
         setStats(prev => ({
           ...prev,
           patients:      pSnap.size,
@@ -78,7 +90,10 @@ export const useDashboardData = (selectedMonth: number) => {
         }));
         setChartData(barData);
       } catch (error) {
-        if (!cancelled) console.error("Error cargando datos del dashboard:", error);
+        if (!cancelled) {
+          console.error("Error cargando datos del dashboard:", error);
+          setLoadError('No se pudieron cargar los datos del panel. Verifica tu conexión e intenta de nuevo.');
+        }
       }
     };
 
@@ -90,5 +105,5 @@ export const useDashboardData = (selectedMonth: number) => {
     };
   }, [selectedMonth]);
 
-  return { stats, chartData, webPendingAppointments };
+  return { stats, chartData, webPendingAppointments, loadError };
 };

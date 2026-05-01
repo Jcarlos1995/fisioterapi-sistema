@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Plus, Search, Edit2, Trash2, X } from 'lucide-react';
+import { Plus, Search, Edit2, Trash2, X, WifiOff } from 'lucide-react';
 import { Patient, Professional } from '../types';
 import { db } from '../firebaseConfig'; 
 import { collection, addDoc, doc, updateDoc, deleteDoc, onSnapshot, query, where, getDocs } from 'firebase/firestore';
@@ -14,6 +14,7 @@ const PatientsManager: React.FC = () => {
   const { showToast } = useToast();
   const [patients, setPatients] = useState<Patient[]>([]);
   const [professionals, setProfessionals] = useState<Professional[]>([]);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [currentPatient, setCurrentPatient] = useState<Partial<Patient>>({});
@@ -21,21 +22,27 @@ const PatientsManager: React.FC = () => {
   useEscKey(() => setIsModalOpen(false), isModalOpen);
 
   useEffect(() => {
-    const unsubPatients = onSnapshot(collection(db, "patients"), (snapshot) => {
-      const patientsData = snapshot.docs.map(doc => ({
-        ...doc.data(),
-        id: doc.id
-      })) as Patient[];
-      setPatients(patientsData);
-    });
+    const onErr = (err: Error) => {
+      console.error('onSnapshot [patients/professionals]:', err);
+      setLoadError('No se pudieron cargar los datos. Verifica tu conexión e intenta de nuevo.');
+    };
 
-    const unsubProfs = onSnapshot(collection(db, "professionals"), (snapshot) => {
-      const profsData = snapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data()
-      })) as Professional[];
-      setProfessionals(profsData);
-    });
+    const unsubPatients = onSnapshot(
+      collection(db, "patients"),
+      (snapshot) => {
+        setLoadError(null);
+        setPatients(snapshot.docs.map(d => ({ ...d.data(), id: d.id }) as Patient));
+      },
+      onErr,
+    );
+
+    const unsubProfs = onSnapshot(
+      collection(db, "professionals"),
+      (snapshot) => {
+        setProfessionals(snapshot.docs.map(d => ({ id: d.id, ...d.data() }) as Professional));
+      },
+      onErr,
+    );
 
     return () => {
       unsubPatients();
@@ -119,6 +126,21 @@ const PatientsManager: React.FC = () => {
 
   return (
     <div className="space-y-6">
+      {/* Banner de error de carga */}
+      {loadError && (
+        <div className="flex items-center gap-3 bg-rose-50 border border-rose-200 text-rose-700 px-4 py-3 rounded-xl text-sm font-medium">
+          <WifiOff size={18} className="shrink-0" />
+          <span>{loadError}</span>
+          <button
+            onClick={() => setLoadError(null)}
+            className="ml-auto text-rose-400 hover:text-rose-600 transition-colors"
+            aria-label="Cerrar aviso"
+          >
+            ✕
+          </button>
+        </div>
+      )}
+
       {confirmDeleteId && (
         <ConfirmModal
           message="¿Eliminar este paciente? Esta acción no se puede deshacer."

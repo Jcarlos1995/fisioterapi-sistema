@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import {
   Users, UserSquare2, Package, BrainCircuit,
-  Activity, Calendar, ClipboardList, AlertTriangle, X, BellRing, ArrowRight, CheckCheck,
+  Activity, Calendar, ClipboardList, AlertTriangle, X, BellRing, ArrowRight, CheckCheck, WifiOff,
 } from 'lucide-react';
 import { auth, db } from '../firebaseConfig';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
@@ -29,11 +29,12 @@ const Dashboard: React.FC = () => {
   const { showToast } = useToast();
   const [selectedMonth,   setSelectedMonth]   = useState(new Date().getMonth());
   const [showStockAlert,  setShowStockAlert]   = useState(true);
+  const [showLoadError,   setShowLoadError]    = useState(true);
   const [analysis,        setAnalysis]         = useState<string | null>(null);
   const [loadingIA,       setLoadingIA]        = useState(false);
   const [cancellations, setCancellations] = useState<CancellationNotification[]>([]);
 
-  const { stats, chartData, webPendingAppointments } = useDashboardData(selectedMonth);
+  const { stats, chartData, webPendingAppointments, loadError } = useDashboardData(selectedMonth);
 
   useEffect(() => {
     const q = query(
@@ -131,6 +132,21 @@ const Dashboard: React.FC = () => {
 
   return (
     <div className="space-y-6">
+
+      {/* Banner de error de carga */}
+      {loadError && showLoadError && (
+        <div className="flex items-center gap-3 bg-rose-50 border border-rose-200 text-rose-700 px-4 py-3 rounded-xl text-sm font-medium">
+          <WifiOff size={18} className="shrink-0" />
+          <span>{loadError}</span>
+          <button
+            onClick={() => setShowLoadError(false)}
+            className="ml-auto text-rose-400 hover:text-rose-600 transition-colors"
+            aria-label="Cerrar aviso"
+          >
+            ✕
+          </button>
+        </div>
+      )}
 
       {webPendingAppointments > 0 && (
         <div className="bg-amber-50 border-l-4 border-amber-400 p-4 rounded-r-2xl shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-3 animate-bounce">
