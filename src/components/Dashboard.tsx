@@ -130,19 +130,19 @@ const Dashboard: React.FC = () => {
   };
 
   return (
-    <div className="p-8 space-y-8 bg-slate-50 min-h-screen">
+    <div className="space-y-6">
 
       {webPendingAppointments > 0 && (
-        <div className="bg-amber-50 border-l-4 border-amber-400 p-5 rounded-r-2xl shadow-sm flex items-center justify-between animate-bounce">
-          <div className="flex items-center gap-4">
-            <div className="bg-amber-100 p-3 rounded-full text-amber-600"><BellRing size={24} /></div>
+        <div className="bg-amber-50 border-l-4 border-amber-400 p-4 rounded-r-2xl shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-3 animate-bounce">
+          <div className="flex items-center gap-3">
+            <div className="bg-amber-100 p-3 rounded-full text-amber-600 shrink-0"><BellRing size={22} /></div>
             <div>
-              <h3 className="text-amber-900 font-bold">¡Tienes {webPendingAppointments} citas programadas desde la Web!</h3>
-              <p className="text-amber-700 text-sm">Revisa la lista de sesiones para asignar especialistas.</p>
+              <h3 className="text-amber-900 font-bold text-sm sm:text-base">¡Tienes {webPendingAppointments} citas programadas desde la Web!</h3>
+              <p className="text-amber-700 text-xs sm:text-sm">Revisa la lista de sesiones para asignar especialistas.</p>
             </div>
           </div>
-          <Link to="/sessions" className="bg-amber-600 text-white px-5 py-2 rounded-xl font-bold hover:bg-amber-700 transition-all flex items-center gap-2 shadow-md">
-            Revisar <ArrowRight size={18} />
+          <Link to="/sessions" className="bg-amber-600 text-white px-4 py-2 rounded-xl font-bold hover:bg-amber-700 transition-all flex items-center gap-2 shadow-md text-sm shrink-0 self-start sm:self-auto">
+            Revisar <ArrowRight size={16} />
           </Link>
         </div>
       )}
@@ -162,25 +162,25 @@ const Dashboard: React.FC = () => {
         </div>
       )}
 
-      <div className="flex justify-between items-center">
+      <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4">
         <div>
-          <h1 className="text-3xl font-bold text-slate-800 uppercase tracking-tight">Panel de Control</h1>
-          <p className="text-slate-500 font-medium italic">Fisioterapia Chepén - Gestión de Salud</p>
+          <h1 className="text-2xl sm:text-3xl font-bold text-slate-800 uppercase tracking-tight">Panel de Control</h1>
+          <p className="text-slate-500 font-medium italic text-sm">Fisioterapia Chepén - Gestión de Salud</p>
         </div>
-        <div className="flex gap-3 items-center">
-          <select value={selectedMonth} onChange={e => setSelectedMonth(parseInt(e.target.value))} className="bg-white border border-slate-200 px-3 py-2 rounded-lg font-semibold text-slate-600 outline-none shadow-sm">
+        <div className="flex flex-wrap gap-2 items-center">
+          <select value={selectedMonth} onChange={e => setSelectedMonth(parseInt(e.target.value))} className="bg-white border border-slate-200 px-3 py-2 rounded-lg font-semibold text-slate-600 outline-none shadow-sm text-sm">
             {MONTHS.map((mes, i) => <option key={i} value={i}>{mes}</option>)}
           </select>
-          <button onClick={handlePrintReport} className="bg-slate-800 text-white px-4 py-2 rounded-lg flex items-center gap-2 font-bold shadow-md hover:bg-slate-900 transition-all">
-            <ClipboardList size={16} /> Exportar
+          <button onClick={handlePrintReport} className="bg-slate-800 text-white px-3 py-2 rounded-lg flex items-center gap-2 font-bold shadow-md hover:bg-slate-900 transition-all text-sm">
+            <ClipboardList size={15} /> <span className="hidden sm:inline">Exportar</span>
           </button>
-          <button onClick={generateAnalysis} className="bg-blue-600 text-white px-4 py-2 rounded-lg flex items-center gap-2 font-bold shadow-md hover:bg-blue-700 transition-all">
-            <BrainCircuit size={16} /> {loadingIA ? "Analizando..." : "Análisis IA"}
+          <button onClick={generateAnalysis} className="bg-blue-600 text-white px-3 py-2 rounded-lg flex items-center gap-2 font-bold shadow-md hover:bg-blue-700 transition-all text-sm">
+            <BrainCircuit size={15} /> {loadingIA ? "Analizando..." : <><span className="hidden sm:inline">Análisis </span>IA</>}
           </button>
         </div>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
+      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-3 sm:gap-4">
         <StatCard icon={<Users className="text-blue-600"/>}        label="Pacientes"       value={stats.patients} />
         <StatCard icon={<UserSquare2 className="text-emerald-600"/>} label="Profesionales"  value={stats.professionals} />
         <StatCard icon={<Calendar className="text-orange-500"/>}   label="Efectuadas"      value={stats.doneSessions} />

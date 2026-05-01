@@ -89,7 +89,10 @@ const ProfessionalsManager: React.FC = () => {
   const openEdit = (prof: Professional) => {
     setEditingId(prof.id);
     setNewProf({ name: prof.name, specialty: prof.specialty, email: prof.email, phone: (prof as any).phone || '' });
-    setFormPerms((prof as any).permissions ?? DEFAULT_PERMISSIONS);
+    // Merge con DEFAULT_PERMISSIONS para que módulos nuevos (ej: dailyTherapy)
+    // siempre tengan valores aunque el documento guardado sea más antiguo.
+    const saved = (prof as any).permissions;
+    setFormPerms(saved ? { ...DEFAULT_PERMISSIONS, ...saved } : DEFAULT_PERMISSIONS);
     setIsModalOpen(true);
   };
 
@@ -160,26 +163,26 @@ const ProfessionalsManager: React.FC = () => {
           onCancel={() => setConfirmDeleteId(null)}
         />
       )}
-      <div className="flex justify-between items-center">
+      <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-3">
         <div>
           <h2 className="text-2xl font-bold text-slate-800">Equipo Profesional</h2>
           <p className="text-slate-500 text-sm">Gestiona los especialistas de la clínica</p>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center gap-2 self-start sm:self-auto">
           {isTI && (
             <button
               onClick={openUsersModal}
-              className="bg-slate-100 text-slate-700 px-4 py-2 rounded-lg flex items-center gap-2 hover:bg-slate-200 transition-colors font-semibold"
+              className="bg-slate-100 text-slate-700 px-4 py-2 rounded-lg flex items-center gap-2 hover:bg-slate-200 transition-colors font-semibold text-sm"
             >
-              <Users size={18} /> Usuarios Activos
+              <Users size={16} /> Usuarios Activos
             </button>
           )}
           {(isTI || permissions.professionals.add) && (
-            <button 
+            <button
               onClick={openAdd}
-              className="bg-blue-600 text-white px-4 py-2 rounded-lg flex items-center gap-2 hover:bg-blue-700 transition-colors shadow-md"
+              className="bg-blue-600 text-white px-4 py-2 rounded-lg flex items-center gap-2 hover:bg-blue-700 transition-colors shadow-md text-sm"
             >
-              <Plus size={20} /> Nuevo Especialista
+              <Plus size={18} /> Nuevo Especialista
             </button>
           )}
         </div>
@@ -243,7 +246,7 @@ const ProfessionalsManager: React.FC = () => {
               <div className="px-8 overflow-y-auto flex-1 pb-2">
 
                 {/* Layout horizontal: datos | permisos */}
-                <div className={`flex gap-8 ${isTI ? '' : 'max-w-sm'}`}>
+                <div className={`flex flex-col sm:flex-row gap-6 sm:gap-8 ${isTI ? '' : 'max-w-sm'}`}>
 
                   {/* Columna izquierda — datos del profesional */}
                   <div className="flex flex-col gap-4 flex-1 min-w-0">
@@ -280,7 +283,7 @@ const ProfessionalsManager: React.FC = () => {
 
                   {/* Columna derecha — permisos (solo TI) */}
                   {isTI && (
-                    <div className="flex-1 min-w-0 border-l border-slate-100 pl-8">
+                    <div className="flex-1 min-w-0 sm:border-l border-slate-100 sm:pl-8 border-t sm:border-t-0 pt-4 sm:pt-0">
                       <div className="flex items-center gap-2 mb-4">
                         <ShieldCheck size={16} className="text-blue-500" />
                         <p className="text-sm font-bold text-slate-700">Permisos del sistema</p>
@@ -311,6 +314,11 @@ const ProfessionalsManager: React.FC = () => {
                       label="Historias"
                       value={formPerms.stories}
                       onChange={v => setFormPerms(p => ({ ...p, stories: v }))}
+                    />
+                    <PermissionGroup
+                      label="Terapia Diaria"
+                      value={formPerms.dailyTherapy}
+                      onChange={v => setFormPerms(p => ({ ...p, dailyTherapy: v }))}
                     />
                       </div>
                     </div>

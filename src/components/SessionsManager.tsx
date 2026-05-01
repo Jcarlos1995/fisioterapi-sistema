@@ -1,23 +1,50 @@
-import { THERAPY_TYPES } from '../constants';
 import React, { useState, useEffect } from 'react';
-import { CalendarDays, Plus, Trash2, Clock, UserSquare2 } from 'lucide-react';
+import { CalendarDays, Plus, Trash2, Clock, UserSquare2, AlertTriangle } from 'lucide-react';
 import { Session, Patient, Professional } from '../types';
 import { db } from '../firebaseConfig';
-import { collection, onSnapshot, addDoc, deleteDoc, doc, updateDoc } from 'firebase/firestore';
+import {
+  collection, onSnapshot, addDoc, deleteDoc, doc,
+  updateDoc, getDocs, query, where, getDoc, orderBy,
+} from 'firebase/firestore';
 import { useAuth } from '../context/AuthContext';
 import { useToast } from '../context/ToastContext';
 import useEscKey from '../hooks/useEscKey';
 import ConfirmModal from './ConfirmModal';
 
+// ─── Tipos locales ─────────────────────────────────────────────────────────────
+
+interface PendingChange {
+  session: Session;
+  newStatus: Session['status'];
+  hasSale: boolean;
+}
+
+interface TherapyTask {
+  id: string;
+  name: string;
+  active: boolean;
+}
+
+// ─── Componente ───────────────────────────────────────────────────────────────
+
 const SessionsManager: React.FC = () => {
-  const { isTI, permissions } = useAuth();
+  const { user, isTI, permissions } = useAuth();
   const { showToast } = useToast();
-  const [sessions, setSessions] = useState<Session[]>([]);
-  const [patients, setPatients] = useState<Patient[]>([]);
+
+  const [sessions,      setSessions]      = useState<Session[]>([]);
+  const [patients,      setPatients]      = useState<Patient[]>([]);
   const [professionals, setProfessionals] = useState<Professional[]>([]);
-  const [isModalOpen, setIsModalOpen] = useState(false);
-  const [formError, setFormError] = useState<string | null>(null);
+  const [therapyTasks,  setTherapyTasks]  = useState<TherapyTask[]>([]);
+  const [servicePrices, setServicePrices] = useState<Record<string, number>>({});
+  const [staffName,     setStaffName]     = useState('');
+
+  const [isModalOpen,    setIsModalOpen]    = useState(false);
+  const [formError,      setFormError]      = useState<string | null>(null);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+
+  // Cambio de estado pendiente de confirmación (cuando sesión ya tiene venta)
+  const [pendingChange, setPendingChange] = useState<PendingChange | null>(null);
+
   useEscKey(() => { setIsModalOpen(false); setFormError(null); }, isModalOpen);
 
   const [newSession, setNewSession] = useState({
@@ -27,80 +54,144 @@ const SessionsManager: React.FC = () => {
     time: '',
     therapyType: '',
     status: 'Programada' as Session['status'],
-    notes: ''
+    notes: '',
   });
 
-  // Función para detectar si la sesión es hoy
-  const isToday = (dateString: string) => {
-    const today = new Date();
-    const sessionDate = new Date(dateString + 'T00:00:00'); // Forzamos formato local
-    
-    return (
-      sessionDate.getDate() === today.getDate() &&
-      sessionDate.getMonth() === today.getMonth() &&
-      sessionDate.getFullYear() === today.getFullYear()
-    );
-  };
-
+  // ── Carga de datos ───────────────────────────────────────────────────────────
   useEffect(() => {
-    const unsubSessions = onSnapshot(collection(db, 'sessions'), (snapshot) => {
-      setSessions(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Session)));
-    });
-    const unsubPatients = onSnapshot(collection(db, 'patients'), (snapshot) => {
-      setPatients(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Patient)));
-    });
-    const unsubProfessionals = onSnapshot(collection(db, 'professionals'), (snapshot) => {
-      setProfessionals(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Professional)));
-    });
-
-    return () => {
-      unsubSessions();
-      unsubPatients();
-      unsubProfessionals();
-    };
+    const unsubSessions      = onSnapshot(collection(db, 'sessions'),      snap => setSessions(snap.docs.map(d => ({ id: d.id, ...d.data() } as Session))));
+    const unsubPatients      = onSnapshot(collection(db, 'patients'),      snap => setPatients(snap.docs.map(d => ({ id: d.id, ...d.data() } as Patient))));
+    const unsubProfessionals = onSnapshot(collection(db, 'professionals'), snap => setProfessionals(snap.docs.map(d => ({ id: d.id, ...d.data() } as Professional))));
+    const unsubTasks         = onSnapshot(
+      query(collection(db, 'therapyTasks'), orderBy('createdAt', 'desc')),
+      snap => setTherapyTasks(snap.docs.map(d => ({ id: d.id, ...d.data() } as TherapyTask)))
+    );
+    return () => { unsubSessions(); unsubPatients(); unsubProfessionals(); unsubTasks(); };
   }, []);
 
+  // Precios de servicios
+  useEffect(() => {
+    getDoc(doc(db, 'servicePrices', 'default'))
+      .then(snap => { if (snap.exists()) setServicePrices(snap.data() as Record<string, number>); });
+  }, []);
+
+  // Nombre del profesional logueado
+  useEffect(() => {
+    if (!user?.email) return;
+    getDocs(query(collection(db, 'professionals'), where('email', '==', user.email)))
+      .then(snap => setStaffName(snap.empty ? (user.email ?? '') : ((snap.docs[0].data() as any).name || user.email || '')))
+      .catch(() => setStaffName(user?.email ?? ''));
+  }, [user?.email]);
+
+  // ── Helpers ──────────────────────────────────────────────────────────────────
+  const isToday = (dateString: string) => {
+    const today       = new Date();
+    const sessionDate = new Date(dateString + 'T00:00:00');
+    return sessionDate.getDate()     === today.getDate()  &&
+           sessionDate.getMonth()    === today.getMonth() &&
+           sessionDate.getFullYear() === today.getFullYear();
+  };
+
+  const getPatientName = (id: string) => patients.find(p => p.id === id)?.name || 'Paciente no encontrado';
+  const getProfName    = (id: string) => professionals.find(p => p.id === id)?.name || 'Especialista no encontrado';
+
+  /** Verifica si ya existe una venta ligada a esta sesión */
+  const checkSaleExists = async (sessionId: string): Promise<boolean> => {
+    const snap = await getDocs(
+      query(collection(db, 'sales'), where('sessionId', '==', sessionId))
+    );
+    return !snap.empty;
+  };
+
+  /** Crea la venta automática al marcar una sesión como Pagada */
+  const autoCreateSale = async (session: Session) => {
+    const patient  = patients.find(p => p.id === session.patientId);
+    const price    = servicePrices[session.therapyType] ?? 0;
+    await addDoc(collection(db, 'sales'), {
+      type:           'service',
+      sessionId:      session.id,
+      patientId:      session.patientId,
+      patientName:    patient?.name || 'Paciente',
+      itemName:       session.therapyType,
+      unitPrice:      price,
+      qty:            1,
+      total:          price,
+      date:           session.date,
+      validOnlyToday: true,
+      notes:          'Venta registrada automáticamente al marcar como Pagada.',
+      createdAt:      new Date().toISOString(),
+      createdByUid:   user?.uid ?? '',
+      createdByName:  staffName,
+    });
+  };
+
+  // ── Cambio de estado ─────────────────────────────────────────────────────────
+  const updateStatus = async (session: Session, newStatus: Session['status']) => {
+    const currentStatus = session.status;
+    if (currentStatus === newStatus) return;
+
+    try {
+      // ① Saliendo de 'Pagada' → verificar si tiene venta registrada
+      if (currentStatus === 'Pagada') {
+        const hasSale = await checkSaleExists(session.id);
+        if (hasSale) {
+          setPendingChange({ session, newStatus, hasSale: true });
+          return; // espera confirmación del usuario
+        }
+      }
+
+      // ② Entrando a 'Pagada' → crear venta automática si no existe
+      if (newStatus === 'Pagada') {
+        const alreadyHasSale = await checkSaleExists(session.id);
+        if (!alreadyHasSale) {
+          await autoCreateSale(session);
+          showToast('Venta registrada automáticamente en Área Reservada.');
+        }
+      }
+
+      await updateDoc(doc(db, 'sessions', session.id), { status: newStatus });
+      showToast();
+    } catch (error) {
+      console.error('Error al actualizar estado:', error);
+      showToast('No se pudo actualizar el estado.', 'error');
+    }
+  };
+
+  /** Confirma el cambio de estado aunque la sesión tenga venta registrada */
+  const confirmPendingChange = async () => {
+    if (!pendingChange) return;
+    const { session, newStatus } = pendingChange;
+    setPendingChange(null);
+    try {
+      await updateDoc(doc(db, 'sessions', session.id), { status: newStatus });
+      showToast('Estado actualizado. La venta permanece registrada en Área Reservada.');
+    } catch {
+      showToast('No se pudo actualizar el estado.', 'error');
+    }
+  };
+
+  // ── Agregar sesión ───────────────────────────────────────────────────────────
   const handleAdd = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newSession.patientId || !newSession.professionalId) {
-      setFormError("Por favor selecciona un paciente y un profesional.");
+      setFormError('Por favor selecciona un paciente y un profesional.');
       return;
     }
-    if (!newSession.date) {
-      setFormError("Por favor selecciona una fecha para la cita.");
-      return;
-    }
-    if (!newSession.time) {
-      setFormError("Por favor selecciona una hora para la cita.");
-      return;
-    }
+    if (!newSession.date) { setFormError('Por favor selecciona una fecha.'); return; }
+    if (!newSession.time) { setFormError('Por favor selecciona una hora.'); return; }
     setFormError(null);
-
     try {
       await addDoc(collection(db, 'sessions'), newSession);
       setIsModalOpen(false);
-      setNewSession({
-        patientId: '', professionalId: '', date: '', time: '',
-        therapyType: '', status: 'Programada', notes: ''
-      });
+      setNewSession({ patientId: '', professionalId: '', date: '', time: '', therapyType: '', status: 'Programada', notes: '' });
       showToast('Cita agendada');
     } catch (error) {
-      console.error("Error al agendar sesión:", error);
+      console.error('Error al agendar sesión:', error);
     }
   };
 
-  const updateStatus = async (id: string, newStatus: Session['status']) => {
-    try {
-      await updateDoc(doc(db, 'sessions', id), { status: newStatus });
-      showToast();
-    } catch (error) {
-      console.error("Error al actualizar estado:", error);
-      showToast("No se pudo actualizar el estado. Verifica tu conexión.", 'error');
-    }
-  };
-
+  // ── Eliminar sesión ──────────────────────────────────────────────────────────
   const handleDelete = (id: string) => setConfirmDeleteId(id);
-
   const confirmDeleteSession = async () => {
     if (!confirmDeleteId) return;
     const id = confirmDeleteId;
@@ -109,11 +200,11 @@ const SessionsManager: React.FC = () => {
     showToast('Cita eliminada');
   };
 
-  const getPatientName = (id: string) => patients.find(p => p.id === id)?.name || 'Paciente no encontrado';
-  const getProfName = (id: string) => professionals.find(p => p.id === id)?.name || 'Especialista no encontrado';
-
+  // ─────────────────────────────────────────────────────────────────────────────
   return (
     <div className="space-y-6">
+
+      {/* Modal confirmar eliminación */}
       {confirmDeleteId && (
         <ConfirmModal
           message="¿Eliminar esta cita? Esta acción no se puede deshacer."
@@ -121,33 +212,70 @@ const SessionsManager: React.FC = () => {
           onCancel={() => setConfirmDeleteId(null)}
         />
       )}
-      <div className="flex justify-between items-center">
+
+      {/* ── Modal: advertencia venta ya registrada ── */}
+      {pendingChange && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white w-full max-w-sm rounded-2xl shadow-2xl p-6 space-y-4">
+            <div className="flex items-start gap-3">
+              <div className="w-10 h-10 bg-amber-100 rounded-xl flex items-center justify-center shrink-0">
+                <AlertTriangle size={20} className="text-amber-600" />
+              </div>
+              <div>
+                <h3 className="font-bold text-slate-800">Venta ya registrada</h3>
+                <p className="text-sm text-slate-500 mt-1">
+                  Esta sesión ya tiene una venta registrada en el Área Reservada.
+                  ¿Seguro que deseas cambiar el estado a{' '}
+                  <strong className="text-slate-700">"{pendingChange.newStatus}"</strong>?
+                  La venta <strong>no se eliminará</strong> automáticamente.
+                </p>
+              </div>
+            </div>
+            <div className="flex gap-2 pt-1">
+              <button
+                onClick={() => setPendingChange(null)}
+                className="flex-1 py-2.5 rounded-xl border border-slate-200 text-sm font-semibold text-slate-600 hover:bg-slate-50 transition-colors"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={confirmPendingChange}
+                className="flex-1 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-600 text-white text-sm font-semibold transition-colors"
+              >
+                Sí, cambiar estado
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Cabecera */}
+      <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-3">
         <div>
           <h2 className="text-2xl font-bold text-slate-800 uppercase tracking-tight">Agenda de Sesiones</h2>
           <p className="text-slate-500 text-sm">Control de citas y tratamientos</p>
         </div>
         {(isTI || permissions.appointments.add) && (
-          <button 
+          <button
             onClick={() => setIsModalOpen(true)}
-            className="bg-indigo-600 text-white px-4 py-2 rounded-lg flex items-center gap-2 hover:bg-indigo-700 transition-all shadow-lg shadow-indigo-100 font-bold"
+            className="bg-indigo-600 text-white px-4 py-2 rounded-lg flex items-center gap-2 hover:bg-indigo-700 transition-all shadow-lg shadow-indigo-100 font-bold self-start sm:self-auto"
           >
             <Plus size={20} /> Agendar Cita
           </button>
         )}
       </div>
 
+      {/* Lista de sesiones */}
       <div className="grid grid-cols-1 gap-4">
         {sessions.map((session) => {
           const esHoy = isToday(session.date);
-          
           return (
-            <div 
-              key={session.id} 
-              className={`relative bg-white p-5 rounded-2xl border-2 transition-all duration-300 flex flex-wrap items-center justify-between gap-4 shadow-sm ${
+            <div
+              key={session.id}
+              className={`relative bg-white p-4 sm:p-5 rounded-2xl border-2 transition-all duration-300 flex flex-col sm:flex-row sm:flex-wrap sm:items-center sm:justify-between gap-3 shadow-sm ${
                 esHoy ? 'border-rose-500 bg-rose-50/30 ring-1 ring-rose-200 animate-in fade-in zoom-in-95' : 'border-slate-100'
               }`}
             >
-              {/* Etiqueta flotante para citas de hoy */}
               {esHoy && (
                 <div className="absolute -top-3 left-6 bg-rose-600 text-white text-[10px] font-black px-3 py-1 rounded-full uppercase tracking-widest shadow-md">
                   Cita para Hoy
@@ -180,24 +308,24 @@ const SessionsManager: React.FC = () => {
               <div className="flex items-center gap-3">
                 {!(isTI || permissions.appointments.edit) ? (
                   <span className={`text-xs font-bold px-3 py-1.5 rounded-full shadow-sm ${
-                    session.status === 'Cancelada' ? 'bg-rose-100 text-rose-700' :
-                    session.status === 'Pagada'    ? 'bg-emerald-100 text-emerald-700' :
-                    session.status === 'Efectuada' ? 'bg-green-100 text-green-700' :
-                    session.status === 'Confirmada'? 'bg-blue-100 text-blue-700' :
-                                                     'bg-amber-100 text-amber-700'
+                    session.status === 'Cancelada'  ? 'bg-rose-100 text-rose-700'     :
+                    session.status === 'Pagada'     ? 'bg-emerald-100 text-emerald-700' :
+                    session.status === 'Efectuada'  ? 'bg-green-100 text-green-700'   :
+                    session.status === 'Confirmada' ? 'bg-blue-100 text-blue-700'     :
+                                                      'bg-amber-100 text-amber-700'
                   }`}>
                     {session.status}
                   </span>
                 ) : (
-                  <select 
+                  <select
                     value={session.status}
-                    onChange={(e) => updateStatus(session.id, e.target.value as Session['status'])}
+                    onChange={e => updateStatus(session, e.target.value as Session['status'])}
                     className={`text-xs font-bold px-3 py-1.5 rounded-full border-none cursor-pointer shadow-sm ${
-                      session.status === 'Cancelada' ? 'bg-rose-100 text-rose-700' :
-                      session.status === 'Pagada'    ? 'bg-emerald-100 text-emerald-700' :
-                      session.status === 'Efectuada' ? 'bg-green-100 text-green-700' :
-                      session.status === 'Confirmada'? 'bg-blue-100 text-blue-700' :
-                                                       'bg-amber-100 text-amber-700'
+                      session.status === 'Cancelada'  ? 'bg-rose-100 text-rose-700'     :
+                      session.status === 'Pagada'     ? 'bg-emerald-100 text-emerald-700' :
+                      session.status === 'Efectuada'  ? 'bg-green-100 text-green-700'   :
+                      session.status === 'Confirmada' ? 'bg-blue-100 text-blue-700'     :
+                                                        'bg-amber-100 text-amber-700'
                     }`}
                   >
                     <option value="Programada">Programada</option>
@@ -218,24 +346,24 @@ const SessionsManager: React.FC = () => {
         })}
       </div>
 
-      {/* Modal permanece igual para no alterar variables ni estructura */}
+      {/* Modal nueva cita */}
       {isModalOpen && (
         <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-3xl p-8 w-full max-w-lg shadow-2xl overflow-y-auto max-h-[90vh]">
             <h3 className="text-xl font-bold mb-6">Nueva Cita</h3>
             <form onSubmit={handleAdd} className="space-y-4">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <select 
+                <select
                   className="w-full p-3 rounded-xl border border-slate-200"
-                  onChange={e => setNewSession({...newSession, patientId: e.target.value})}
+                  onChange={e => setNewSession({ ...newSession, patientId: e.target.value })}
                   required
                 >
                   <option value="">Seleccionar Paciente</option>
                   {patients.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
                 </select>
-                <select 
+                <select
                   className="w-full p-3 rounded-xl border border-slate-200"
-                  onChange={e => setNewSession({...newSession, professionalId: e.target.value})}
+                  onChange={e => setNewSession({ ...newSession, professionalId: e.target.value })}
                   required
                 >
                   <option value="">Seleccionar Profesional</option>
@@ -243,27 +371,27 @@ const SessionsManager: React.FC = () => {
                 </select>
               </div>
               <div className="grid grid-cols-2 gap-4">
-                <input required type="date" className="w-full p-3 rounded-xl border border-slate-200" onChange={e => setNewSession({...newSession, date: e.target.value})} />
-                <input required type="time" className="w-full p-3 rounded-xl border border-slate-200" onChange={e => setNewSession({...newSession, time: e.target.value})} />
+                <input required type="date" className="w-full p-3 rounded-xl border border-slate-200" onChange={e => setNewSession({ ...newSession, date: e.target.value })} />
+                <input required type="time" className="w-full p-3 rounded-xl border border-slate-200" onChange={e => setNewSession({ ...newSession, time: e.target.value })} />
               </div>
               <div>
                 <label className="text-xs font-bold text-slate-500 uppercase ml-1">Tipo de Terapia</label>
-                <select 
+                <select
                   className="w-full p-3 mt-1 rounded-xl border border-slate-200 focus:ring-2 focus:ring-indigo-500 outline-none bg-white font-medium"
                   value={newSession.therapyType}
-                  onChange={e => setNewSession({...newSession, therapyType: e.target.value})}
+                  onChange={e => setNewSession({ ...newSession, therapyType: e.target.value })}
                   required
                 >
                   <option value="">Seleccionar Terapia</option>
-                  {THERAPY_TYPES.map(type => (
-                    <option key={type} value={type}>{type}</option>
+                  {therapyTasks.filter(t => t.active).map(t => (
+                    <option key={t.id} value={t.name}>{t.name}</option>
                   ))}
                 </select>
               </div>
-              <textarea 
-                placeholder="Notas adicionales..." 
+              <textarea
+                placeholder="Notas adicionales..."
                 className="w-full p-3 rounded-xl border border-slate-200 h-24 outline-none focus:ring-2 focus:ring-indigo-500"
-                onChange={e => setNewSession({...newSession, notes: e.target.value})}
+                onChange={e => setNewSession({ ...newSession, notes: e.target.value })}
               />
               {formError && <p className="text-xs text-rose-500 font-medium">{formError}</p>}
               <div className="flex gap-3 pt-4">

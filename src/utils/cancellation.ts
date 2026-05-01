@@ -15,7 +15,8 @@ export const getCancellationEligibility = (
     return { cancelable: false, message: 'Esta cita ya no admite cancelación.' };
   }
 
-  const date = new Date(`${sessionDate}T${sessionTime}:00`);
+  // Interpretar siempre en hora de Lima (UTC-5) para consistencia
+  const date = new Date(`${sessionDate}T${sessionTime}:00-05:00`);
   if (Number.isNaN(date.getTime())) {
     return { cancelable: false, message: 'La cita tiene fecha u hora inválida.' };
   }

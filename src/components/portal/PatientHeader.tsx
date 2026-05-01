@@ -9,21 +9,32 @@ interface PatientHeaderProps {
 }
 
 const PatientHeader: React.FC<PatientHeaderProps> = ({ patient, onLogout }) => {
+  const displayName = patient.name?.replace(/\b\w/g, c => c.toUpperCase()) || '';
+  const initial = displayName.charAt(0) || 'P';
+
   return (
-    <header className="bg-white/95 backdrop-blur-sm border border-slate-200 rounded-3xl p-4 sm:p-5 flex items-center justify-between gap-4">
-      <div className="flex items-center gap-3">
-        <img src={logoFisioterapia} alt="Fisioterapi Chepén" className="h-10 w-auto object-contain shrink-0" />
+    <header className="bg-gradient-to-r from-blue-600 to-blue-700 rounded-3xl p-5 sm:p-6 flex items-center justify-between gap-4 shadow-lg shadow-blue-300/40">
+      <div className="flex items-center gap-4">
+        {/* Avatar con inicial */}
+        <div className="w-12 h-12 rounded-2xl bg-white/20 backdrop-blur-sm flex items-center justify-center shrink-0">
+          <span className="text-white font-bold text-xl">{initial}</span>
+        </div>
         <div>
-          <p className="text-xs uppercase tracking-wide text-slate-500 font-semibold">Portal de Pacientes</p>
-          <h1 className="text-lg sm:text-xl font-bold text-slate-800">{patient.name}</h1>
+          <p className="flex items-center gap-1.5 text-blue-200 text-xs font-semibold uppercase tracking-wider">
+            <img src={logoFisioterapia} alt="" className="h-4 w-auto opacity-75" />
+            Portal de Pacientes
+          </p>
+          <h1 className="text-white font-bold text-lg sm:text-xl mt-0.5">{displayName}</h1>
         </div>
       </div>
+
       <button
         onClick={onLogout}
-        className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold transition-colors"
+        className="flex items-center gap-2 px-4 py-2 rounded-xl bg-white/15 hover:bg-white/25 text-white font-semibold text-sm transition-colors shrink-0"
       >
         <LogOut size={16} />
-        Cerrar sesión
+        <span className="hidden sm:inline">Cerrar sesión</span>
+        <span className="sm:hidden">Salir</span>
       </button>
     </header>
   );

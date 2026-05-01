@@ -46,7 +46,7 @@ const PatientsManager: React.FC = () => {
   const term = searchTerm.toLowerCase();
   const filtered = patients.filter(p =>
     (p.name?.toLowerCase() ?? '').includes(term) ||
-    (p.email?.toLowerCase() ?? '').includes(term)
+    (p.dni?.toLowerCase() ?? '').includes(term)
   );
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -126,15 +126,15 @@ const PatientsManager: React.FC = () => {
           onCancel={() => setConfirmDeleteId(null)}
         />
       )}
-      <div className="flex justify-between items-center">
+      <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-3">
         <div>
           <h1 className="text-2xl font-bold text-slate-800">Pacientes</h1>
-          <p className="text-slate-500">Administra el registro de tus pacientes</p>
+          <p className="text-slate-500 text-sm">Administra el registro de tus pacientes</p>
         </div>
         {(isTI || permissions.patients.add) && (
-          <button 
+          <button
             onClick={() => { setCurrentPatient({}); setIsModalOpen(true); }}
-            className="flex items-center gap-2 bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors shadow-md"
+            className="flex items-center gap-2 bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors shadow-md self-start sm:self-auto"
           >
             <Plus size={20} /> Nuevo Paciente
           </button>
@@ -144,9 +144,9 @@ const PatientsManager: React.FC = () => {
       <div className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
         <div className="p-4 border-b border-slate-100 flex items-center gap-3">
           <Search size={20} className="text-slate-400" />
-          <input 
-            type="text" 
-            placeholder="Buscar por nombre o email..." 
+          <input
+            type="text"
+            placeholder="Buscar por nombre o DNI..."
             className="flex-1 outline-none text-slate-900 bg-transparent font-medium"
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
@@ -221,15 +221,6 @@ const PatientsManager: React.FC = () => {
                   <option key={pro.id} value={pro.id}>{pro.name}</option>
                 ))}
               </select>
-
-              <input 
-                placeholder="Email"
-                type="email"
-                required
-                className="w-full px-4 py-2 border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-blue-600"
-                value={currentPatient.email || ''}
-                onChange={(e) => setCurrentPatient({...currentPatient, email: e.target.value})}
-              />
 
               <div className="grid grid-cols-2 gap-4">
                 <input 

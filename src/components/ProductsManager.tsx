@@ -83,15 +83,15 @@ const ProductsManager: React.FC = () => {
           onCancel={() => setConfirmDeleteId(null)}
         />
       )}
-      <div className="flex justify-between items-center">
+      <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-3">
         <div>
           <h2 className="text-2xl font-bold text-slate-800">Inventario</h2>
           <p className="text-slate-500 text-sm">Control de insumos</p>
         </div>
         {(isTI || permissions.products.add) && (
-          <button 
+          <button
             onClick={() => setIsModalOpen(true)}
-            className="bg-emerald-600 text-white px-4 py-2 rounded-lg flex items-center gap-2 hover:bg-emerald-700 shadow-md"
+            className="bg-emerald-600 text-white px-4 py-2 rounded-lg flex items-center gap-2 hover:bg-emerald-700 shadow-md self-start sm:self-auto"
           >
             <Plus size={20} /> Nuevo Producto
           </button>

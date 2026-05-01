@@ -39,20 +39,35 @@ const reserveProductsCallable = httpsCallable<ReserveProductsRequest, { success:
   'reserveProducts'
 );
 
+// Color de fondo del ícono según categoría
+const CATEGORY_COLOR: Record<string, string> = {
+  colageno:  'bg-purple-100 text-purple-600',
+  capsulas:  'bg-emerald-100 text-emerald-600',
+  polvo:     'bg-amber-100 text-amber-600',
+  crema:     'bg-pink-100 text-pink-600',
+  jarabe:    'bg-cyan-100 text-cyan-600',
+  tabletas:  'bg-blue-100 text-blue-600',
+};
+
+function categoryColor(cat?: string): string {
+  const key = (cat || '').toLowerCase().trim();
+  return CATEGORY_COLOR[key] ?? 'bg-slate-100 text-slate-500';
+}
+
 interface PatientProductsListProps {
   patient: PortalPatient;
 }
 
 const PatientProductsList: React.FC<PatientProductsListProps> = ({ patient }) => {
   const { showToast } = useToast();
-  const [products, setProducts] = useState<PortalProduct[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [cart, setCart] = useState<Record<string, CartItem>>({});
-  const [sending, setSending] = useState(false);
+  const [products, setProducts]   = useState<PortalProduct[]>([]);
+  const [loading, setLoading]     = useState(false);
+  const [error, setError]         = useState<string | null>(null);
+  const [cart, setCart]           = useState<Record<string, CartItem>>({});
+  const [sending, setSending]     = useState(false);
 
   useEffect(() => {
-    const loadProducts = async () => {
+    const load = async () => {
       setLoading(true);
       setError(null);
       try {
@@ -64,18 +79,14 @@ const PatientProductsList: React.FC<PatientProductsListProps> = ({ patient }) =>
         setLoading(false);
       }
     };
-    loadProducts();
+    load();
   }, []);
 
-  const addToCart = (product: PortalProduct) => {
-    setCart((prev) => ({
-      ...prev,
-      [product.id]: { product, qty: 1 },
-    }));
-  };
+  const addToCart = (product: PortalProduct) =>
+    setCart(prev => ({ ...prev, [product.id]: { product, qty: 1 } }));
 
   const updateQty = (productId: string, delta: number) => {
-    setCart((prev) => {
+    setCart(prev => {
       const item = prev[productId];
       if (!item) return prev;
       const newQty = item.qty + delta;
@@ -84,25 +95,16 @@ const PatientProductsList: React.FC<PatientProductsListProps> = ({ patient }) =>
         delete next[productId];
         return next;
       }
-      const maxQty = item.product.stock ?? 99;
-      return { ...prev, [productId]: { ...item, qty: Math.min(newQty, maxQty) } };
+      return { ...prev, [productId]: { ...item, qty: Math.min(newQty, item.product.stock ?? 99) } };
     });
   };
 
-  const removeFromCart = (productId: string) => {
-    setCart((prev) => {
-      const next = { ...prev };
-      delete next[productId];
-      return next;
-    });
-  };
+  const removeFromCart = (productId: string) =>
+    setCart(prev => { const n = { ...prev }; delete n[productId]; return n; });
 
   const cartItems = Object.values(cart);
-  const cartTotal = cartItems.reduce(
-    (sum, item) => sum + (item.product.price || 0) * item.qty,
-    0
-  );
-  const cartCount = cartItems.reduce((sum, item) => sum + item.qty, 0);
+  const cartTotal = cartItems.reduce((s, i) => s + (i.product.price || 0) * i.qty, 0);
+  const cartCount = cartItems.reduce((s, i) => s + i.qty, 0);
 
   const handleConfirm = async () => {
     if (!cartItems.length || sending) return;
@@ -111,9 +113,9 @@ const PatientProductsList: React.FC<PatientProductsListProps> = ({ patient }) =>
       await reserveProductsCallable({
         items: cartItems.map(({ product, qty }) => ({
           productId: product.id,
-          name:      product.name,
+          name:  product.name,
           qty,
-          price:     product.price || 0,
+          price: product.price || 0,
         })),
         patientName:  patient.name  || '',
         patientDni:   patient.dni   || '',
@@ -128,107 +130,129 @@ const PatientProductsList: React.FC<PatientProductsListProps> = ({ patient }) =>
     }
   };
 
-  if (loading) return <p className="text-sm text-slate-500">Cargando productos...</p>;
-  if (error)   return <p className="text-sm text-rose-600">{error}</p>;
+  if (loading) return (
+    <div className="py-10 text-center text-slate-400 text-sm">Cargando productos...</div>
+  );
+  if (error) return (
+    <div className="py-10 text-center text-rose-500 text-sm">{error}</div>
+  );
 
   return (
     <div className={cartItems.length > 0 ? 'pb-28' : ''}>
-      <div className="grid grid-cols-3 gap-3">
-        {products.length === 0 ? (
-          <div className="col-span-3 bg-white border border-slate-200 rounded-2xl p-5 text-sm text-slate-500">
-            No hay productos disponibles por ahora.
-          </div>
-        ) : (
-          products.map((product) => {
+
+      {/* Aviso */}
+      <p className="flex items-center gap-1.5 text-xs text-slate-400 mb-4">
+        <Package size={13} />
+        Usa "Separar" para reservar. La clínica confirmará la disponibilidad.
+      </p>
+
+      {products.length === 0 ? (
+        <div className="py-10 text-center text-slate-400 text-sm">
+          No hay productos disponibles por ahora.
+        </div>
+      ) : (
+        <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+          {products.map(product => {
             const inCart   = Boolean(cart[product.id]);
             const cartItem = cart[product.id];
             const hasStock = (product.stock ?? 0) > 0;
+            const iconClass = categoryColor(product.category);
 
             return (
               <article
                 key={product.id}
-                className={`bg-white border rounded-2xl p-3 shadow-sm transition-colors flex flex-col justify-between gap-3 ${
-                  inCart ? 'border-blue-300 bg-blue-50/40' : 'border-slate-200'
+                className={`bg-white border rounded-2xl p-4 shadow-sm flex flex-col gap-3 transition-all ${
+                  inCart ? 'border-blue-300 ring-2 ring-blue-100' : 'border-slate-100'
                 }`}
               >
-                <div>
-                  <h3 className="font-semibold text-slate-800 leading-tight text-sm">{product.name}</h3>
-                  <p className="text-xs text-slate-500 mt-0.5">{product.category || 'Sin categoría'}</p>
-                  <p className="text-sm font-bold text-blue-700 mt-2">S/ {(product.price || 0).toFixed(2)}</p>
-                  <p className={`text-xs mt-0.5 ${hasStock ? 'text-slate-400' : 'text-rose-500 font-semibold'}`}>
-                    {hasStock ? `Stock: ${product.stock}` : 'Sin stock'}
-                  </p>
+                {/* Ícono + categoría */}
+                <div className="flex items-center gap-2">
+                  <div className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${iconClass}`}>
+                    <Package size={16} />
+                  </div>
+                  <span className="text-xs text-slate-400 capitalize truncate">{product.category || 'Producto'}</span>
                 </div>
 
-                <div className="flex items-center justify-center">
-                  {!inCart ? (
+                {/* Nombre */}
+                <h3 className="font-semibold text-slate-800 text-sm leading-snug capitalize flex-1">
+                  {product.name}
+                </h3>
+
+                {/* Precio + stock */}
+                <div className="flex items-center justify-between gap-2">
+                  <p className="text-base font-bold text-blue-700">
+                    S/ {(product.price || 0).toFixed(2)}
+                  </p>
+                  <span className={`text-xs font-semibold px-2 py-0.5 rounded-full shrink-0 ${
+                    hasStock ? 'bg-green-50 text-green-600' : 'bg-rose-50 text-rose-500'
+                  }`}>
+                    {hasStock ? `${product.stock} disp.` : 'Sin stock'}
+                  </span>
+                </div>
+
+                {/* Acción */}
+                {!inCart ? (
+                  <button
+                    type="button"
+                    disabled={!hasStock}
+                    onClick={() => addToCart(product)}
+                    className={`w-full flex items-center justify-center gap-1.5 py-2 rounded-xl text-sm font-semibold transition-colors ${
+                      hasStock
+                        ? 'bg-blue-600 hover:bg-blue-700 text-white'
+                        : 'bg-slate-100 text-slate-400 cursor-not-allowed'
+                    }`}
+                  >
+                    <ShoppingCart size={14} />
+                    Separar
+                  </button>
+                ) : (
+                  <div className="flex items-center justify-between gap-1 bg-blue-50 rounded-xl px-2 py-1">
                     <button
                       type="button"
-                      disabled={!hasStock}
-                      onClick={() => addToCart(product)}
-                      className={`w-full inline-flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold transition-colors ${
-                        hasStock
-                          ? 'bg-blue-600 hover:bg-blue-700 text-white'
-                          : 'bg-slate-100 text-slate-400 cursor-not-allowed'
-                      }`}
+                      onClick={() => updateQty(product.id, -1)}
+                      className="w-7 h-7 rounded-lg bg-white border border-slate-200 hover:bg-slate-50 flex items-center justify-center transition-colors shadow-sm"
                     >
-                      <ShoppingCart size={13} />
-                      Separar
+                      <Minus size={12} />
                     </button>
-                  ) : (
-                    <div className="flex items-center gap-1.5 w-full justify-between">
-                      <button
-                        type="button"
-                        onClick={() => updateQty(product.id, -1)}
-                        className="w-7 h-7 rounded-lg bg-slate-200 hover:bg-slate-300 flex items-center justify-center transition-colors"
-                      >
-                        <Minus size={13} />
-                      </button>
-                      <span className="text-sm font-bold text-slate-800">{cartItem.qty}</span>
-                      <button
-                        type="button"
-                        onClick={() => updateQty(product.id, 1)}
-                        disabled={cartItem.qty >= (product.stock ?? 99)}
-                        className="w-7 h-7 rounded-lg bg-slate-200 hover:bg-slate-300 flex items-center justify-center transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-                      >
-                        <Plus size={13} />
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => removeFromCart(product.id)}
-                        className="w-7 h-7 rounded-lg bg-rose-100 hover:bg-rose-200 text-rose-600 flex items-center justify-center transition-colors"
-                      >
-                        <X size={13} />
-                      </button>
-                    </div>
-                  )}
-                </div>
+                    <span className="text-sm font-bold text-slate-800 tabular-nums">{cartItem.qty}</span>
+                    <button
+                      type="button"
+                      onClick={() => updateQty(product.id, 1)}
+                      disabled={cartItem.qty >= (product.stock ?? 99)}
+                      className="w-7 h-7 rounded-lg bg-white border border-slate-200 hover:bg-slate-50 flex items-center justify-center transition-colors shadow-sm disabled:opacity-40"
+                    >
+                      <Plus size={12} />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => removeFromCart(product.id)}
+                      className="w-7 h-7 rounded-lg bg-rose-50 hover:bg-rose-100 text-rose-500 flex items-center justify-center transition-colors"
+                    >
+                      <X size={12} />
+                    </button>
+                  </div>
+                )}
               </article>
             );
-          })
-        )}
+          })}
+        </div>
+      )}
 
-        <p className="text-xs text-slate-500 flex items-center gap-1">
-          <Package size={13} />
-          Usa el botón "Separar" para reservar productos. La clínica confirmará la disponibilidad.
-        </p>
-      </div>
-
-      {/* Panel de carrito sticky */}
+      {/* Barra de carrito sticky */}
       {cartItems.length > 0 && (
-        <div className="fixed bottom-0 left-0 right-0 z-50 px-4 pb-4 pt-3 bg-white/95 backdrop-blur-sm border-t border-slate-200 shadow-lg">
+        <div className="fixed bottom-0 left-0 right-0 z-50 px-4 pb-4 pt-3 bg-white/95 backdrop-blur-sm border-t border-slate-200 shadow-xl">
           <div className="max-w-lg mx-auto flex items-center justify-between gap-3">
             <div className="flex items-center gap-2 min-w-0">
               <button
                 type="button"
                 onClick={() => setCart({})}
-                className="shrink-0 p-1 rounded-lg text-slate-400 hover:text-rose-500 hover:bg-rose-50 transition-colors"
+                className="shrink-0 p-1.5 rounded-lg text-slate-400 hover:text-rose-500 hover:bg-rose-50 transition-colors"
                 aria-label="Vaciar carrito"
               >
-                <Trash2 size={16} />
+                <Trash2 size={15} />
               </button>
               <div className="min-w-0">
-                <p className="text-sm font-bold text-slate-800 truncate">
+                <p className="text-sm font-bold text-slate-800">
                   {cartCount} {cartCount === 1 ? 'producto' : 'productos'}
                 </p>
                 <p className="text-xs text-slate-500">Total: S/ {cartTotal.toFixed(2)}</p>
@@ -238,7 +262,7 @@ const PatientProductsList: React.FC<PatientProductsListProps> = ({ patient }) =>
               type="button"
               onClick={handleConfirm}
               disabled={sending}
-              className="shrink-0 inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-sm font-bold transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
+              className="shrink-0 inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-sm font-bold transition-colors disabled:opacity-60 shadow-sm shadow-blue-300"
             >
               <ShoppingCart size={15} />
               {sending ? 'Enviando...' : 'Confirmar separado'}

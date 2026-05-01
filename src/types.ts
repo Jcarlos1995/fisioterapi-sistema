@@ -12,6 +12,7 @@ export interface UserPermissions {
   appointments:  ModulePermissions;
   products:      ModulePermissions;
   stories:       ModulePermissions;
+  dailyTherapy:  ModulePermissions;
 }
 
 export const DEFAULT_PERMISSIONS: UserPermissions = {
@@ -20,6 +21,7 @@ export const DEFAULT_PERMISSIONS: UserPermissions = {
   appointments:  { add: false, edit: false, delete: false },
   products:      { add: false, edit: false, delete: false },
   stories:       { add: false, edit: false, delete: false },
+  dailyTherapy:  { add: false, edit: false, delete: false },
 };
 
 export const FULL_PERMISSIONS: UserPermissions = {
@@ -28,6 +30,7 @@ export const FULL_PERMISSIONS: UserPermissions = {
   appointments:  { add: true, edit: true, delete: true },
   products:      { add: true, edit: true, delete: true },
   stories:       { add: true, edit: true, delete: true },
+  dailyTherapy:  { add: true, edit: true, delete: true },
 };
 
 export interface Professional {
@@ -41,7 +44,7 @@ export interface Professional {
 export interface Patient {
   id: string;
   name: string;
-  email: string;
+  email?: string;
   dni: string;
   birthDate?: string;
   age: number;
