@@ -10,6 +10,7 @@ import { useAuth } from '../context/AuthContext';
 import { useToast } from '../context/ToastContext';
 import useEscKey from '../hooks/useEscKey';
 import ConfirmModal from './ConfirmModal';
+import { isToday, shouldAutoCreateSale, shouldWarnOnLeave, statusBadgeClass } from '../utils/session';
 
 // ─── Tipos locales ─────────────────────────────────────────────────────────────
 
@@ -84,14 +85,6 @@ const SessionsManager: React.FC = () => {
   }, [user?.email]);
 
   // ── Helpers ──────────────────────────────────────────────────────────────────
-  const isToday = (dateString: string) => {
-    const today       = new Date();
-    const sessionDate = new Date(dateString + 'T00:00:00');
-    return sessionDate.getDate()     === today.getDate()  &&
-           sessionDate.getMonth()    === today.getMonth() &&
-           sessionDate.getFullYear() === today.getFullYear();
-  };
-
   const getPatientName = (id: string) => patients.find(p => p.id === id)?.name || 'Paciente no encontrado';
   const getProfName    = (id: string) => professionals.find(p => p.id === id)?.name || 'Especialista no encontrado';
 
@@ -132,7 +125,7 @@ const SessionsManager: React.FC = () => {
 
     try {
       // ① Saliendo de 'Pagada' → verificar si tiene venta registrada
-      if (currentStatus === 'Pagada') {
+      if (shouldWarnOnLeave(currentStatus)) {
         const hasSale = await checkSaleExists(session.id);
         if (hasSale) {
           setPendingChange({ session, newStatus, hasSale: true });
@@ -141,7 +134,7 @@ const SessionsManager: React.FC = () => {
       }
 
       // ② Entrando a 'Pagada' → crear venta automática si no existe
-      if (newStatus === 'Pagada') {
+      if (shouldAutoCreateSale(currentStatus, newStatus)) {
         const alreadyHasSale = await checkSaleExists(session.id);
         if (!alreadyHasSale) {
           await autoCreateSale(session);
@@ -307,26 +300,14 @@ const SessionsManager: React.FC = () => {
 
               <div className="flex items-center gap-3">
                 {!(isTI || permissions.appointments.edit) ? (
-                  <span className={`text-xs font-bold px-3 py-1.5 rounded-full shadow-sm ${
-                    session.status === 'Cancelada'  ? 'bg-rose-100 text-rose-700'     :
-                    session.status === 'Pagada'     ? 'bg-emerald-100 text-emerald-700' :
-                    session.status === 'Efectuada'  ? 'bg-green-100 text-green-700'   :
-                    session.status === 'Confirmada' ? 'bg-blue-100 text-blue-700'     :
-                                                      'bg-amber-100 text-amber-700'
-                  }`}>
+                  <span className={`text-xs font-bold px-3 py-1.5 rounded-full shadow-sm ${statusBadgeClass(session.status)}`}>
                     {session.status}
                   </span>
                 ) : (
                   <select
                     value={session.status}
                     onChange={e => updateStatus(session, e.target.value as Session['status'])}
-                    className={`text-xs font-bold px-3 py-1.5 rounded-full border-none cursor-pointer shadow-sm ${
-                      session.status === 'Cancelada'  ? 'bg-rose-100 text-rose-700'     :
-                      session.status === 'Pagada'     ? 'bg-emerald-100 text-emerald-700' :
-                      session.status === 'Efectuada'  ? 'bg-green-100 text-green-700'   :
-                      session.status === 'Confirmada' ? 'bg-blue-100 text-blue-700'     :
-                                                        'bg-amber-100 text-amber-700'
-                    }`}
+                    className={`text-xs font-bold px-3 py-1.5 rounded-full border-none cursor-pointer shadow-sm ${statusBadgeClass(session.status)}`}
                   >
                     <option value="Programada">Programada</option>
                     <option value="Confirmada">Confirmada</option>
