@@ -6,6 +6,7 @@ import esLocale from '@fullcalendar/core/locales/es';
 import { getFunctions, httpsCallable } from 'firebase/functions';
 import { Activity, Clock, User, Phone, CheckCircle, ArrowLeft, X, Lock, AlertCircle } from 'lucide-react';
 import { BookedSlot, slotKey, buildOccupancyMap, isSlotAllowed, occupancyColor, mapBookingError } from '../utils/booking';
+import { LANDING_URL } from '../config';
 
 
 const BookingSystem: React.FC = () => {
@@ -32,9 +33,6 @@ const BookingSystem: React.FC = () => {
     "Masaje Terapéutico",
     "Terapia Deportiva"
   ];
-
-  // URL de tu landing page
-  const LANDING_URL = 'https://fisiochepen-oficial.web.app';
 
   // ─── Mapa de ocupación: slot ISO normalizado → Set de servicios tomados ──────
   const occupancyMap = useMemo(() => buildOccupancyMap(bookedSlots), [bookedSlots]);

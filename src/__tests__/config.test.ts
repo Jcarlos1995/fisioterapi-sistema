@@ -16,28 +16,28 @@ describe('URLs de configuración del sistema', () => {
     });
   });
 
-  it('LANDING_URL apunta al proyecto de la landing', () => {
-    expect(LANDING_URL).toContain('fisiochepen-oficial');
+  it('LANDING_URL apunta al dominio principal de la clínica', () => {
+    expect(LANDING_URL).toContain('fisioterapichepen.com');
   });
 
-  it('BOOKING_URL apunta al proyecto del sistema', () => {
-    expect(BOOKING_URL).toContain('fisiosystem-8c492');
+  it('BOOKING_URL apunta al subdominio del sistema', () => {
+    expect(BOOKING_URL).toContain('sistema.fisioterapichepen.com');
   });
 
   it('BOOKING_URL incluye la ruta de agendamiento (#/agendar)', () => {
     expect(BOOKING_URL).toContain('#/agendar');
   });
 
-  it('PORTAL_URL apunta al proyecto del sistema', () => {
-    expect(PORTAL_URL).toContain('fisiosystem-8c492');
+  it('PORTAL_URL apunta al subdominio del sistema', () => {
+    expect(PORTAL_URL).toContain('sistema.fisioterapichepen.com');
   });
 
   it('PORTAL_URL incluye la ruta del portal (#/portal)', () => {
     expect(PORTAL_URL).toContain('#/portal');
   });
 
-  it('SISTEMA_URL apunta al proyecto del sistema', () => {
-    expect(SISTEMA_URL).toContain('fisiosystem-8c492');
+  it('SISTEMA_URL apunta al subdominio del sistema', () => {
+    expect(SISTEMA_URL).toContain('sistema.fisioterapichepen.com');
   });
 
   it('WHATSAPP_URL incluye el número de la clínica', () => {
