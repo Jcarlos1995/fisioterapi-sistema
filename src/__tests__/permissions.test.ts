@@ -41,8 +41,10 @@ describe('FULL_PERMISSIONS', () => {
 describe('UserPermissions shape', () => {
   it('DEFAULT_PERMISSIONS tiene exactamente los módulos esperados', () => {
     const keys = Object.keys(DEFAULT_PERMISSIONS) as (keyof UserPermissions)[];
-    expect(keys).toEqual(expect.arrayContaining(['professionals', 'patients', 'appointments', 'products', 'stories']));
-    expect(keys).toHaveLength(5);
+    expect(keys).toEqual(expect.arrayContaining([
+      'professionals', 'patients', 'appointments', 'products', 'stories', 'dailyTherapy',
+    ]));
+    expect(keys).toHaveLength(6);
   });
 });
 
