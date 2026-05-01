@@ -7,38 +7,65 @@ test.describe('Navegación del panel interno', () => {
     test.skip(noCredentials, 'Requiere E2E_TEST_EMAIL y E2E_TEST_PASSWORD');
   });
 
-  test('Dashboard muestra "Panel de Control" y tarjetas de stats', async ({ page }) => {
-    await expect(page.getByText('Panel de Control')).toBeVisible();
-    await expect(page.getByText('Pacientes')).toBeVisible();
-    await expect(page.getByText('Profesionales')).toBeVisible();
+  // ── Dashboard ────────────────────────────────────────────────────────────────
+  test('Dashboard muestra "Panel de Control" y los links del sidebar', async ({ page }) => {
+    await expect(page.getByRole('heading', { name: 'Panel de Control' })).toBeVisible();
+    // Los links del sidebar deben estar siempre presentes (sidebar arranca expandido)
+    await expect(page.getByRole('link', { name: 'Pacientes' })).toBeVisible();
+    await expect(page.getByRole('link', { name: 'Sesiones' })).toBeVisible();
+    await expect(page.getByRole('link', { name: 'Profesionales' })).toBeVisible();
+    await expect(page.getByRole('link', { name: 'Productos' })).toBeVisible();
   });
 
-  test('navega a Pacientes y muestra la lista', async ({ page }) => {
-    await page.getByRole('link', { name: /pacientes/i }).first().click();
-    await expect(page.getByText('Pacientes').first()).toBeVisible({ timeout: 10_000 });
+  // ── Pacientes ────────────────────────────────────────────────────────────────
+  test('navega a Pacientes y carga la lista', async ({ page }) => {
+    await page.getByRole('link', { name: 'Pacientes' }).click();
+    await page.waitForURL(/#\/patients/);
+    // El heading aparece cuando Firestore termina de cargar (sustituye al skeleton)
+    await expect(page.getByRole('heading', { name: 'Pacientes' })).toBeVisible({ timeout: 15_000 });
   });
 
+  // ── Sesiones ─────────────────────────────────────────────────────────────────
   test('navega a Sesiones y muestra la agenda', async ({ page }) => {
-    await page.getByRole('link', { name: /sesiones/i }).first().click();
-    await expect(page.getByText('Agenda de Sesiones')).toBeVisible({ timeout: 10_000 });
+    await page.getByRole('link', { name: 'Sesiones' }).click();
+    await page.waitForURL(/#\/sessions/);
+    await expect(page.getByRole('heading', { name: 'Agenda de Sesiones' })).toBeVisible({ timeout: 15_000 });
   });
 
+  // ── Profesionales ─────────────────────────────────────────────────────────────
   test('navega a Profesionales y muestra el equipo', async ({ page }) => {
-    await page.getByRole('link', { name: /profesionales/i }).first().click();
-    await expect(page.getByText('Equipo Profesional')).toBeVisible({ timeout: 10_000 });
+    await page.getByRole('link', { name: 'Profesionales' }).click();
+    await page.waitForURL(/#\/professionals/);
+    await expect(page.getByRole('heading', { name: 'Equipo Profesional' })).toBeVisible({ timeout: 15_000 });
   });
 
-  test('navega a Inventario y muestra productos', async ({ page }) => {
-    await page.getByRole('link', { name: /productos/i }).first().click();
-    await expect(page.getByText('Inventario')).toBeVisible({ timeout: 10_000 });
+  // ── Productos / Inventario ───────────────────────────────────────────────────
+  test('navega a Productos y muestra el inventario', async ({ page }) => {
+    await page.getByRole('link', { name: 'Productos' }).click();
+    await page.waitForURL(/#\/products/);
+    await expect(page.getByRole('heading', { name: 'Inventario' })).toBeVisible({ timeout: 15_000 });
   });
 
-  test('cierra sesión y redirige fuera del panel', async ({ page }) => {
+  // ── Historias ────────────────────────────────────────────────────────────────
+  test('navega a Historias y muestra los testimonios', async ({ page }) => {
+    await page.getByRole('link', { name: 'Historias' }).click();
+    await page.waitForURL(/#\/stories/);
+    await expect(page.getByRole('heading', { name: 'Historias que Inspiran' })).toBeVisible({ timeout: 15_000 });
+  });
+
+  // ── Terapia Diaria ───────────────────────────────────────────────────────────
+  test('navega a Terapia Diaria y muestra la vista', async ({ page }) => {
+    await page.getByRole('link', { name: 'Terapia Diaria' }).click();
+    await page.waitForURL(/#\/daily-therapy/);
+    await expect(page.getByRole('heading', { name: 'Terapia Diaria' })).toBeVisible({ timeout: 15_000 });
+  });
+
+  // ── Logout ───────────────────────────────────────────────────────────────────
+  test('cierra sesión y vuelve al formulario de login', async ({ page }) => {
+    // El botón tiene texto visible cuando el sidebar está expandido (default)
     await page.getByRole('button', { name: /cerrar sesión/i }).click();
-    // Tras logout redirige a la landing o muestra el login
     await expect(
       page.getByPlaceholder('profesional@fisioterapi.com')
-        .or(page.getByText(/fisioterapichepen\.com|fisioterapi chepén/i).first())
     ).toBeVisible({ timeout: 15_000 });
   });
 });
