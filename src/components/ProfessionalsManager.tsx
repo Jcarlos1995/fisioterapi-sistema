@@ -96,10 +96,10 @@ const ProfessionalsManager: React.FC = () => {
 
   const openEdit = (prof: Professional) => {
     setEditingId(prof.id);
-    setNewProf({ name: prof.name, specialty: prof.specialty, email: prof.email, phone: (prof as any).phone || '' });
+    setNewProf({ name: prof.name, specialty: prof.specialty, email: prof.email, phone: prof.phone ?? '' });
     // Merge con DEFAULT_PERMISSIONS para que módulos nuevos (ej: dailyTherapy)
     // siempre tengan valores aunque el documento guardado sea más antiguo.
-    const saved = (prof as any).permissions;
+    const saved = prof.permissions;
     setFormPerms(saved ? { ...DEFAULT_PERMISSIONS, ...saved } : DEFAULT_PERMISSIONS);
     setIsModalOpen(true);
   };
@@ -254,7 +254,7 @@ const ProfessionalsManager: React.FC = () => {
             <div className="space-y-2 text-sm text-slate-600">
               <div className="flex items-center gap-2"><Mail size={14} /> {prof.email}</div>
               {/* Solución al error .phone con casteo seguro */}
-              <div className="flex items-center gap-2"><Phone size={14} /> {(prof as any).phone || 'Sin teléfono'}</div>
+              <div className="flex items-center gap-2"><Phone size={14} /> {prof.phone ?? 'Sin teléfono'}</div>
             </div>
           </div>
         ))}

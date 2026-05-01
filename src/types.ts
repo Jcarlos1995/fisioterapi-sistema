@@ -39,6 +39,7 @@ export interface Professional {
   specialty: string;
   email: string;
   phone?: string;
+  permissions?: UserPermissions; // Permisos granulares para rol 'operador'
 }
 
 export interface Patient {

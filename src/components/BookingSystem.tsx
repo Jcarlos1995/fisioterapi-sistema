@@ -2,6 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import FullCalendar from '@fullcalendar/react';
 import timeGridPlugin from '@fullcalendar/timegrid';
 import interactionPlugin from '@fullcalendar/interaction';
+import { EventInput, DateSpanApi } from '@fullcalendar/core';
 import esLocale from '@fullcalendar/core/locales/es';
 import { getFunctions, httpsCallable } from 'firebase/functions';
 import { Activity, Clock, User, Phone, CheckCircle, ArrowLeft, X, Lock, AlertCircle } from 'lucide-react';
@@ -75,7 +76,7 @@ const BookingSystem: React.FC = () => {
   // los usamos para pintar la ocupación. slotLaneClassNames NO sirve porque
   // pinta filas de hora completas a través de todos los días.
   const events = useMemo(() => {
-    const out: any[] = [];
+    const out: EventInput[] = [];
     const total = therapyOptions.length;
 
     occupancyMap.forEach((services, key) => {
@@ -99,7 +100,7 @@ const BookingSystem: React.FC = () => {
   }, [occupancyMap, therapyOptions.length]);
 
   // Bloquear selección de slots pasados o completamente llenos (5/5)
-  const handleSelectAllow = (selectInfo: any): boolean =>
+  const handleSelectAllow = (selectInfo: DateSpanApi): boolean =>
     isSlotAllowed(selectInfo.startStr, occupancyMap, therapyOptions.length);
 
 

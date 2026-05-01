@@ -11,7 +11,7 @@ import { db } from '../firebaseConfig';
 import { useAuth } from '../context/AuthContext';
 import { useToast } from '../context/ToastContext';
 import useEscKey from '../hooks/useEscKey';
-import { Patient } from '../types';
+import { Patient, Professional } from '../types';
 
 // ─── Interfaces ───────────────────────────────────────────────────────────────
 
@@ -91,8 +91,9 @@ const SalesArea: React.FC = () => {
     if (!user?.email) return;
     getDocs(query(collection(db, 'professionals')))
       .then(snap => {
-        const match = snap.docs.find(d => (d.data() as any).email === user.email);
-        setStaffName(match ? (match.data() as any).name || user.email! : user.email!);
+        type ProfData = Pick<Professional, 'email' | 'name'>;
+        const match = snap.docs.find(d => (d.data() as ProfData).email === user.email);
+        setStaffName(match ? (match.data() as ProfData).name || user.email! : user.email!);
       })
       .catch(() => setStaffName(user?.email ?? ''));
   }, [user?.email]);

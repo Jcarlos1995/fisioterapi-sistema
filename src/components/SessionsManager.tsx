@@ -104,7 +104,7 @@ const SessionsManager: React.FC = () => {
   useEffect(() => {
     if (!user?.email) return;
     getDocs(query(collection(db, 'professionals'), where('email', '==', user.email)))
-      .then(snap => setStaffName(snap.empty ? (user.email ?? '') : ((snap.docs[0].data() as any).name || user.email || '')))
+      .then(snap => setStaffName(snap.empty ? (user.email ?? '') : ((snap.docs[0].data() as Pick<Professional, 'name'>).name || user.email || '')))
       .catch(() => setStaffName(user?.email ?? ''));
   }, [user?.email]);
 

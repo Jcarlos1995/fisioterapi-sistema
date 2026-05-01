@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { db } from '../firebaseConfig';
-import { collection, getDocs, onSnapshot, query, where } from 'firebase/firestore';
+import { collection, getDocs, onSnapshot, query, where, DocumentData } from 'firebase/firestore';
+import { Professional } from '../types';
 
 export interface DashboardStats {
   patients:       number;
@@ -63,14 +64,14 @@ export const useDashboardData = (selectedMonth: number) => {
           getDocs(collection(db, 'sessions')),
         ]);
 
-        const sessions      = sessSnap.docs.map(d => d.data());
-        const professionals = proSnap.docs.map(d => ({ id: d.id, ...d.data() })) as any[];
+        const sessions      = sessSnap.docs.map(d => d.data()) as DocumentData[];
+        const professionals = proSnap.docs.map(d => ({ id: d.id, ...d.data() })) as Professional[];
 
         const count = (status: string) => sessions.filter(s => s.status?.toLowerCase() === status).length;
 
         const barData: ChartEntry[] = professionals.map((pro) => ({
           name: pro.name ? pro.name.split(' ')[0] : 'Sin nombre',
-          sesiones: sessions.filter((s: any) => {
+          sesiones: sessions.filter(s => {
             if (!s.date) return false;
             return (
               s.professionalId === pro.id &&
