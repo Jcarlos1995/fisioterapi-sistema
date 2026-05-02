@@ -58,19 +58,8 @@ const BookingSystem: React.FC = () => {
   }, [selectedSlot]);
 
   // ─── reCAPTCHA v3 ─────────────────────────────────────────────────────────
-  useEffect(() => {
-    const siteKey = import.meta.env.VITE_RECAPTCHA_SITE_KEY;
-    if (!siteKey) return;
-    const script = document.createElement('script');
-    script.src   = `https://www.google.com/recaptcha/api.js?render=${siteKey}`;
-    script.async = true;
-    document.head.appendChild(script);
-    return () => {
-      document.head.removeChild(script);
-      document.querySelectorAll('.grecaptcha-badge').forEach(el => el.remove());
-    };
-  }, []);
-
+  // App Check (firebaseConfig.ts) ya carga el script de reCAPTCHA al iniciar.
+  // No lo cargamos aquí para evitar doble inicialización que causa error 400.
   const getReCaptchaToken = (): Promise<string | null> =>
     new Promise((resolve) => {
       const siteKey = import.meta.env.VITE_RECAPTCHA_SITE_KEY;
