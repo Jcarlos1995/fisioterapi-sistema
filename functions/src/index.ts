@@ -364,6 +364,7 @@ export const createBooking = onCall(
       patientId,
       professionalId: "",
       date:        sessionDate,
+      yearMonth:   sessionDate.substring(0, 7),
       time:        sessionTime,
       endDate:     endStr,
       therapyType,

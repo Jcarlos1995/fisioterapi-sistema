@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { db } from '../firebaseConfig';
-import { collection, getDocs, onSnapshot, query, where, DocumentData } from 'firebase/firestore';
+import { collection, getDocs, onSnapshot, query, where, getCountFromServer } from 'firebase/firestore';
 import { Professional } from '../types';
 
 export interface DashboardStats {
@@ -56,29 +56,37 @@ export const useDashboardData = (selectedMonth: number) => {
       onSnapErr('sessions-web'),
     );
 
+    const year      = new Date().getFullYear();
+    const yearMonth = `${year}-${String(selectedMonth + 1).padStart(2, '0')}`;
+
     const fetchData = async () => {
       try {
-        const [pSnap, proSnap, sessSnap] = await Promise.all([
-          getDocs(collection(db, 'patients')),
+        const [
+          pCount,
+          profSnap,
+          chartSnap,
+          doneCount,
+          confirmedCount,
+          scheduledCount,
+          paidCount,
+        ] = await Promise.all([
+          getCountFromServer(collection(db, 'patients')),
           getDocs(collection(db, 'professionals')),
-          getDocs(collection(db, 'sessions')),
+          getDocs(query(collection(db, 'sessions'), where('yearMonth', '==', yearMonth))),
+          getCountFromServer(query(collection(db, 'sessions'), where('status', '==', 'Efectuada'))),
+          getCountFromServer(query(collection(db, 'sessions'), where('status', '==', 'Confirmada'))),
+          getCountFromServer(query(collection(db, 'sessions'), where('status', '==', 'Programada'))),
+          getCountFromServer(query(collection(db, 'sessions'), where('status', '==', 'Pagada'))),
         ]);
 
-        const sessions      = sessSnap.docs.map(d => d.data()) as DocumentData[];
-        const professionals = proSnap.docs.map(d => ({ id: d.id, ...d.data() })) as Professional[];
-
-        const count = (status: string) => sessions.filter(s => s.status?.toLowerCase() === status).length;
+        const professionals = profSnap.docs.map(d => ({ id: d.id, ...d.data() })) as Professional[];
+        const monthSessions = chartSnap.docs.map(d => d.data());
 
         const barData: ChartEntry[] = professionals.map((pro) => ({
           name: pro.name ? pro.name.split(' ')[0] : 'Sin nombre',
-          sesiones: sessions.filter(s => {
-            if (!s.date) return false;
-            return (
-              s.professionalId === pro.id &&
-              s.status?.toLowerCase() === 'efectuada' &&
-              new Date(s.date).getMonth() === selectedMonth
-            );
-          }).length,
+          sesiones: monthSessions.filter(
+            s => s.professionalId === pro.id && s.status?.toLowerCase() === 'efectuada'
+          ).length,
         }));
 
         if (cancelled) return;
@@ -86,10 +94,10 @@ export const useDashboardData = (selectedMonth: number) => {
         setIsLoading(false);
         setStats(prev => ({
           ...prev,
-          patients:      pSnap.size,
-          professionals: proSnap.size,
-          doneSessions:  count('efectuada'),
-          totalSessions: count('efectuada') + count('confirmada') + count('programada') + count('pagada'),
+          patients:      pCount.data().count,
+          professionals: profSnap.size,
+          doneSessions:  doneCount.data().count,
+          totalSessions: doneCount.data().count + confirmedCount.data().count + scheduledCount.data().count + paidCount.data().count,
         }));
         setChartData(barData);
       } catch (error) {

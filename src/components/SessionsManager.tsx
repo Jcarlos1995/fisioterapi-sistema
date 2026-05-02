@@ -206,7 +206,10 @@ const SessionsManager: React.FC = () => {
     if (!newSession.time) { setFormError('Por favor selecciona una hora.'); return; }
     setFormError(null);
     try {
-      const sessionRef = await addDoc(collection(db, 'sessions'), newSession);
+      const sessionRef = await addDoc(collection(db, 'sessions'), {
+        ...newSession,
+        yearMonth: newSession.date.substring(0, 7),
+      });
       if (user) void writeAuditLog(user, 'create_session', sessionRef.id,
         patients.find(p => p.id === newSession.patientId)?.name,
         { date: newSession.date, therapyType: newSession.therapyType },

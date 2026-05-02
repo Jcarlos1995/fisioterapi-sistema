@@ -63,6 +63,7 @@ export interface Session {
   therapyType: string;
   status: 'Programada' | 'Confirmada' | 'Efectuada' | 'Pagada' | 'Cancelada';
   notes?: string;
+  yearMonth?: string; // "YYYY-MM" — para queries eficientes por mes en el dashboard
   // Campos adicionales escritos por BookingSystem (reservas online)
   type?: 'online-booking';
   endDate?: string;
