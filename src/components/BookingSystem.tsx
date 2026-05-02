@@ -57,6 +57,34 @@ const BookingSystem: React.FC = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedSlot]);
 
+  // ─── reCAPTCHA v3 ─────────────────────────────────────────────────────────
+  useEffect(() => {
+    const siteKey = import.meta.env.VITE_RECAPTCHA_SITE_KEY;
+    if (!siteKey) return;
+    const script = document.createElement('script');
+    script.src   = `https://www.google.com/recaptcha/api.js?render=${siteKey}`;
+    script.async = true;
+    document.head.appendChild(script);
+    return () => {
+      document.head.removeChild(script);
+      document.querySelectorAll('.grecaptcha-badge').forEach(el => el.remove());
+    };
+  }, []);
+
+  const getReCaptchaToken = (): Promise<string | null> =>
+    new Promise((resolve) => {
+      const siteKey = import.meta.env.VITE_RECAPTCHA_SITE_KEY;
+      if (!siteKey) { resolve(null); return; }
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const gr = (window as any).grecaptcha;
+      if (!gr) { resolve(null); return; }
+      gr.ready(() => {
+        gr.execute(siteKey, { action: 'booking' })
+          .then((token: string) => resolve(token))
+          .catch(() => resolve(null));
+      });
+    });
+
   useEffect(() => {
     const fetchCitas = async () => {
       try {
@@ -126,18 +154,20 @@ const BookingSystem: React.FC = () => {
     setIsSubmitting(true);
     setSubmitError(null);
     try {
-      const functions     = getFunctions(undefined, 'us-central1');
-      const createBooking = httpsCallable<object, { success: boolean }>(functions, 'createBooking');
+      const recaptchaToken = await getReCaptchaToken();
+      const functions      = getFunctions(undefined, 'us-central1');
+      const createBooking  = httpsCallable<object, { success: boolean }>(functions, 'createBooking');
 
       await createBooking({
-        name:        formData.name,
-        phone:       formData.phone,
-        dni:         formData.dni,
-        age:         formData.age,
-        birthDate:   formData.birthDate,
-        therapyType: formData.therapyType,
-        startStr:    selectedSlot.startStr,
-        endStr:      selectedSlot.endStr,
+        name:            formData.name,
+        phone:           formData.phone,
+        dni:             formData.dni,
+        age:             formData.age,
+        birthDate:       formData.birthDate,
+        therapyType:     formData.therapyType,
+        startStr:        selectedSlot.startStr,
+        endStr:          selectedSlot.endStr,
+        recaptchaToken:  recaptchaToken ?? undefined,
       });
 
       setIsBooked(true);

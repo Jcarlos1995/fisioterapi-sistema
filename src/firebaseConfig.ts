@@ -3,6 +3,7 @@ import { getAuth } from "firebase/auth";
 import { getFirestore } from "firebase/firestore";
 import { getFunctions } from "firebase/functions";
 import { getStorage } from "firebase/storage";
+import { initializeAppCheck, ReCaptchaV3Provider } from "firebase/app-check";
 
 const firebaseConfig = {
   apiKey:            import.meta.env.VITE_FIREBASE_API_KEY,
@@ -16,7 +17,16 @@ const firebaseConfig = {
 
 const app = initializeApp(firebaseConfig);
 
-export const db      = getFirestore(app);
-export const auth    = getAuth(app);
+// App Check con reCAPTCHA v3 — certifica que los requests vienen de la app real
+const recaptchaSiteKey = import.meta.env.VITE_RECAPTCHA_SITE_KEY;
+if (recaptchaSiteKey) {
+  initializeAppCheck(app, {
+    provider: new ReCaptchaV3Provider(recaptchaSiteKey),
+    isTokenAutoRefreshEnabled: true,
+  });
+}
+
+export const db        = getFirestore(app);
+export const auth      = getAuth(app);
 export const functions = getFunctions(app, "us-central1");
-export const storage = getStorage(app);
+export const storage   = getStorage(app);

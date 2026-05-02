@@ -178,8 +178,8 @@ export const geminiProxy = onRequest(
   }
 );
 
-// ─── Rate limit: máx 5 intentos por IP por hora ───────────────────────────
-const MAX_PER_HOUR = 5;
+// ─── Rate limit: máx 3 intentos por IP por hora ───────────────────────────
+const MAX_PER_HOUR = 3;
 const HOUR_MS      = 60 * 60 * 1000;
 
 async function checkIpRateLimit(ip: string): Promise<void> {
@@ -235,15 +235,16 @@ function parseSessionDateTime(date: string, time: string): Date | null {
 }
 
 interface BookingInput {
-  name:        string;
-  phone:       string;
-  email?:      string;
-  dni:         string;
-  age:         string;
-  birthDate?:  string;
-  therapyType: string;
-  startStr:    string;
-  endStr:      string;
+  name:            string;
+  phone:           string;
+  email?:          string;
+  dni:             string;
+  age:             string;
+  birthDate?:      string;
+  therapyType:     string;
+  startStr:        string;
+  endStr:          string;
+  recaptchaToken?: string;
 }
 
 export const getAvailability = onCall(
@@ -285,15 +286,34 @@ export const createBooking = onCall(
     region:         "us-central1",
     timeoutSeconds: 30,
     cors:           true,
-    secrets:        ["CALLMEBOT_API_KEY"],
+    secrets:        ["CALLMEBOT_API_KEY", "RECAPTCHA_SECRET_KEY"],
   },
   async (request) => {
     // Rate limit por IP
     const ip = request.rawRequest.ip ?? "unknown";
     await checkIpRateLimit(ip);
 
-    const { name, phone, email, dni, age, birthDate, therapyType, startStr, endStr } =
+    const { name, phone, email, dni, age, birthDate, therapyType, startStr, endStr, recaptchaToken } =
       request.data as BookingInput;
+
+    // Verificar reCAPTCHA v3 — score < 0.5 indica comportamiento automatizado
+    const recaptchaSecret = process.env.RECAPTCHA_SECRET_KEY;
+    if (recaptchaToken && recaptchaSecret) {
+      try {
+        const verifyRes  = await fetch(
+          `https://www.recaptcha.net/recaptcha/api/siteverify?secret=${recaptchaSecret}&response=${recaptchaToken}`,
+          { method: "POST" }
+        );
+        const verifyData = await verifyRes.json() as { success: boolean; score: number };
+        if (!verifyData.success || verifyData.score < 0.5) {
+          throw new HttpsError("permission-denied", "Verificación de seguridad fallida. Por favor intenta de nuevo.");
+        }
+      } catch (err) {
+        if (err instanceof HttpsError) throw err;
+        // Error de red al verificar — el rate limit sigue activo como protección base
+        console.warn("reCAPTCHA verify network error:", err);
+      }
+    }
     const cleanBirthDate = (birthDate || "").trim();
 
     // Validación básica de campos requeridos
