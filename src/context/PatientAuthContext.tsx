@@ -1,7 +1,7 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import { httpsCallable } from 'firebase/functions';
-import { functions } from '../firebaseConfig';
-import { PortalPatient } from '../components/portal/types';
+import { functions } from '../lib/firebase';
+import { PortalPatient } from '../modules/portal/types';
 
 const STORAGE_KEY = 'patientPortalSession';
 const SESSION_MS = 60 * 60 * 1000;

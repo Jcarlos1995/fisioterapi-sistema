@@ -3,11 +3,11 @@ import { vi, Mock } from 'vitest';
 import * as AuthContext from '../../context/AuthContext';
 import * as Firestore from 'firebase/firestore';
 import { DEFAULT_PERMISSIONS, FULL_PERMISSIONS, UserPermissions } from '../../types';
-import PatientsManager from '../../components/PatientsManager';
+import PatientsManager from '../../modules/patients/PatientsManager';
 
 // ─── Mocks globales ───────────────────────────────────────────────────────────
 
-vi.mock('../../firebaseConfig', () => ({
+vi.mock('../../lib/firebase', () => ({
   db: {}, auth: {}, functions: {}, storage: {},
 }));
 
@@ -33,7 +33,7 @@ vi.mock('../../context/ToastContext', () => ({
   useToast: () => ({ showToast: vi.fn() }),
 }));
 
-vi.mock('../../hooks/useEscKey', () => ({
+vi.mock('../../shared/hooks/useEscKey', () => ({
   default: vi.fn(),
 }));
 

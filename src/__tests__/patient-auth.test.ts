@@ -1,4 +1,4 @@
-import { validateBirthDate, validateDni } from '../utils/validation';
+import { validateBirthDate, validateDni } from '../shared/utils/validation';
 
 // ─── validateDni ──────────────────────────────────────────────────────────────
 describe('validateDni', () => {

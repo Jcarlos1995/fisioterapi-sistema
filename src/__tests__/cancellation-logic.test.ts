@@ -1,4 +1,4 @@
-import { getCancellationEligibility } from '../utils/cancellation';
+import { getCancellationEligibility } from '../shared/utils/cancellation';
 
 /**
  * La función getCancellationEligibility parsea fecha+hora con offset Lima (UTC-5).

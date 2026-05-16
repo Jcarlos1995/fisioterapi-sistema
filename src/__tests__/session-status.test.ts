@@ -4,7 +4,7 @@ import {
   shouldWarnOnLeave,
   isTerminalStatus,
   statusBadgeClass,
-} from '../utils/session';
+} from '../shared/utils/session';
 import { Session } from '../types';
 
 // ─── isToday ──────────────────────────────────────────────────────────────────

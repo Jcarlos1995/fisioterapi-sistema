@@ -1,6 +1,6 @@
 import { render, screen, fireEvent } from '@testing-library/react';
 import { vi, beforeEach } from 'vitest';
-import ConfirmModal from '../../components/ConfirmModal';
+import ConfirmModal from '../../shared/components/ConfirmModal';
 
 // ─── ConfirmModal ─────────────────────────────────────────────────────────────
 // Componente puramente presentacional — no necesita mocks de Firebase.

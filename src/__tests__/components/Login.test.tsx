@@ -1,11 +1,11 @@
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { vi, Mock } from 'vitest';
 import * as firebaseAuth from 'firebase/auth';
-import Login from '../../components/Login';
+import Login from '../../modules/auth/Login';
 
 // ─── Mocks ───────────────────────────────────────────────────────────────────
 
-vi.mock('../../firebaseConfig', () => ({
+vi.mock('../../lib/firebase', () => ({
   auth: {}, db: {}, functions: {}, storage: {},
 }));
 

@@ -1,8 +1,8 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import { onAuthStateChanged, signOut, User } from 'firebase/auth';
 import { collection, doc, getDoc, onSnapshot, query, setDoc, where } from 'firebase/firestore';
-import { auth, db } from '../firebaseConfig';
-import LoadingScreen from '../components/LoadingScreen';
+import { auth, db } from '../lib/firebase';
+import LoadingScreen from '../shared/components/LoadingScreen';
 import { UserRole, UserPermissions, DEFAULT_PERMISSIONS, FULL_PERMISSIONS } from '../types';
 
 interface AuthContextType {

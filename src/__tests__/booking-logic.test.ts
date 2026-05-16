@@ -6,7 +6,7 @@ import {
   occupancyColor,
   mapBookingError,
   BookedSlot,
-} from '../utils/booking';
+} from '../shared/utils/booking';
 
 const THERAPY_OPTIONS = [
   'Fisioterapia',
