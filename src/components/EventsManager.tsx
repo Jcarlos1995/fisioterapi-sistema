@@ -232,7 +232,7 @@ const EventsManager: React.FC = () => {
         <div>
           <label className="block text-sm font-medium text-slate-700 mb-1.5 flex items-center gap-1.5">
             <Globe size={14} className="text-slate-500" />
-            URL del evento en vivo
+            URL de Facebook Live
           </label>
           <input
             type="url"
@@ -242,7 +242,7 @@ const EventsManager: React.FC = () => {
             className="w-full border border-slate-300 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent font-mono"
           />
           <p className="text-xs text-slate-400 mt-1">
-            Acepta links de Facebook Live, TikTok Live, YouTube Live, etc.
+            Solo compatible con Facebook Live.
           </p>
         </div>
 
@@ -250,9 +250,9 @@ const EventsManager: React.FC = () => {
         <div className="flex items-start gap-2.5 bg-amber-50 border border-amber-200 rounded-xl p-3.5 text-sm text-amber-700">
           <AlertCircle size={16} className="shrink-0 mt-0.5" />
           <p>
-            Para Facebook: usa la URL directa del video en vivo
+            Usa la URL directa del video o directo de Facebook
             (ej: <span className="font-mono">https://www.facebook.com/TuPagina/videos/123456789</span>).
-            El embed funciona solo con videos/directos públicos de páginas de Facebook.
+            El video debe ser público y pertenecer a una Página de Facebook.
           </p>
         </div>
 
@@ -289,6 +289,7 @@ const EventsManager: React.FC = () => {
           <li>Al activar, el botón rojo "Ver evento en vivo" aparece al instante en la landing.</li>
           <li>Al hacer clic en ese botón, los visitantes ven el directo en un modal.</li>
           <li>Al desactivar, el botón desaparece sin necesidad de deploy.</li>
+          <li>Solo funciona con Facebook Live (videos públicos de Páginas de Facebook).</li>
           <li>Puedes reutilizarlo para cualquier evento: sorteos, clases, anuncios, etc.</li>
         </ul>
       </div>
