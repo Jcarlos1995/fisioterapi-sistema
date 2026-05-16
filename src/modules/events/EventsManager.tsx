@@ -109,6 +109,9 @@ const EventsManager: React.FC = () => {
         mode:        redirectMode ? 'redirect' : 'embed',
       } satisfies LiveEventDoc);
       showToast('¡Evento activado! El botón ya aparece en la landing.', 'success');
+      setTitleInput('');
+      setUrlInput('');
+      setRedirectMode(false);
     } catch (err) {
       console.error('[EventsManager] Error activando evento:', err);
       showToast('Error al activar el evento. Revisa la consola.', 'error');
