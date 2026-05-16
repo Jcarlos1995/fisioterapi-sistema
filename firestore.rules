@@ -29,6 +29,13 @@ service cloud.firestore {
       allow write: if request.auth != null;
     }
 
+    // Config del panel (ej: liveEvent): lectura pública (landing la consume),
+    // escritura solo para staff autenticado (EventsManager en el panel).
+    match /config/{docId} {
+      allow read:  if true;
+      allow write: if request.auth != null;
+    }
+
     // Rate limiting: solo el Admin SDK (Cloud Functions) puede escribir aquí
     match /bookingRateLimits/{id} {
       allow read, write: if false;

@@ -15,6 +15,7 @@ import {
   KeyRound,
   ClipboardList,
   BadgeDollarSign,
+  Radio,
 } from 'lucide-react';
 
 import { signOut } from 'firebase/auth';
@@ -36,6 +37,7 @@ import PatientPortal from './components/portal/PatientPortal';
 import { PatientAuthProvider } from './context/PatientAuthContext';
 import DailyTherapy from './components/DailyTherapy';
 import SalesArea from './components/SalesArea';
+import EventsManager from './components/EventsManager';
 
 const App: React.FC = () => {
   const { user, loading, isTI, role } = useAuth();
@@ -139,6 +141,9 @@ const App: React.FC = () => {
                     {isAdminOrTI && (
                       <SidebarItem to="/sales-area" icon={<BadgeDollarSign size={20} />} label="Área Reservada" expanded={isSidebarOpen} onNavClick={closeMobileMenu} />
                     )}
+                    {isTI && (
+                      <SidebarItem to="/events" icon={<Radio size={20} />} label="Eventos" expanded={isSidebarOpen} onNavClick={closeMobileMenu} />
+                    )}
                   </nav>
 
                   {/* Footer del sidebar */}
@@ -205,6 +210,7 @@ const App: React.FC = () => {
                         <Route path="/stories"      element={<Stories />} />
                         <Route path="/daily-therapy" element={<DailyTherapy />} />
                         <Route path="/sales-area"   element={<SalesArea />} />
+                        <Route path="/events"       element={<EventsManager />} />
                       </Routes>
                     </div>
                   </main>
