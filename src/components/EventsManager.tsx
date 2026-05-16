@@ -19,13 +19,16 @@
 import React, { useState, useEffect } from 'react';
 import { doc, onSnapshot, setDoc } from 'firebase/firestore';
 import { db } from '../firebaseConfig';
-import { Radio, Globe, CheckCircle, XCircle, Tv, AlertCircle } from 'lucide-react';
+import { Radio, Globe, CheckCircle, XCircle, Tv, AlertCircle, ExternalLink } from 'lucide-react';
 import { useToast } from '../context/ToastContext';
+
+type LiveEventMode = 'embed' | 'redirect';
 
 interface LiveEventDoc {
   active: boolean;
-  facebookUrl: string;
+  facebookUrl: string;        // URL del directo (Facebook, YouTube, TikTok, etc.)
   title: string;
+  mode: LiveEventMode;        // 'embed' = abre modal · 'redirect' = abre en nueva pestaña
 }
 
 const LIVE_EVENT_REF = doc(db, 'config', 'liveEvent');
@@ -34,6 +37,7 @@ const DEFAULT_DOC: LiveEventDoc = {
   active:      false,
   facebookUrl: '',
   title:       'Evento en Vivo',
+  mode:        'embed',
 };
 
 const EventsManager: React.FC = () => {
@@ -46,6 +50,7 @@ const EventsManager: React.FC = () => {
   // Campos del formulario
   const [titleInput, setTitleInput]       = useState('');
   const [urlInput,   setUrlInput]         = useState('');
+  const [redirectMode, setRedirectMode]   = useState(false);
   const [saving,     setSaving]           = useState(false);
   const [deactivating, setDeactivating]   = useState(false);
 
@@ -55,18 +60,26 @@ const EventsManager: React.FC = () => {
       LIVE_EVENT_REF,
       (snap) => {
         if (snap.exists()) {
-          const data = snap.data() as LiveEventDoc;
+          const raw  = snap.data();
+          const data: LiveEventDoc = {
+            active:      Boolean(raw.active),
+            facebookUrl: String(raw.facebookUrl ?? ''),
+            title:       String(raw.title ?? 'Evento en Vivo'),
+            mode:        raw.mode === 'redirect' ? 'redirect' : 'embed',
+          };
           setCurrent(data);
           // Solo pre-rellena el form si no hay un evento activo (para no
           // interrumpir una edición en curso)
           if (!data.active) {
             setTitleInput(data.title || '');
             setUrlInput(data.facebookUrl || '');
+            setRedirectMode(data.mode === 'redirect');
           }
         } else {
           setCurrent(null);
           setTitleInput('');
           setUrlInput('');
+          setRedirectMode(false);
         }
         setLoadingDoc(false);
       },
@@ -93,6 +106,7 @@ const EventsManager: React.FC = () => {
         active:      true,
         facebookUrl: url,
         title:       title,
+        mode:        redirectMode ? 'redirect' : 'embed',
       } satisfies LiveEventDoc);
       showToast('¡Evento activado! El botón ya aparece en la landing.', 'success');
     } catch (err) {
@@ -110,6 +124,7 @@ const EventsManager: React.FC = () => {
         active:      false,
         facebookUrl: current?.facebookUrl ?? '',
         title:       current?.title ?? 'Evento en Vivo',
+        mode:        current?.mode ?? 'embed',
       } satisfies LiveEventDoc);
       showToast('Evento desactivado. El botón ya no aparece en la landing.', 'success');
     } catch (err) {
@@ -167,6 +182,16 @@ const EventsManager: React.FC = () => {
               <p className="text-slate-700">
                 <span className="font-medium">Título:</span>{' '}
                 <span className="text-slate-600">{current.title}</span>
+              </p>
+              <p className="text-slate-700">
+                <span className="font-medium">Modo:</span>{' '}
+                <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold ${
+                  current.mode === 'redirect'
+                    ? 'bg-blue-100 text-blue-700'
+                    : 'bg-emerald-100 text-emerald-700'
+                }`}>
+                  {current.mode === 'redirect' ? <><ExternalLink size={11} /> Redirección</> : <><Tv size={11} /> Modal embebido</>}
+                </span>
               </p>
               <p className="text-slate-700 break-all">
                 <span className="font-medium">URL:</span>{' '}
@@ -232,29 +257,64 @@ const EventsManager: React.FC = () => {
         <div>
           <label className="block text-sm font-medium text-slate-700 mb-1.5 flex items-center gap-1.5">
             <Globe size={14} className="text-slate-500" />
-            URL de Facebook Live
+            URL del evento en vivo
           </label>
           <input
             type="url"
             value={urlInput}
             onChange={(e) => setUrlInput(e.target.value)}
-            placeholder='https://www.facebook.com/video/...'
+            placeholder={redirectMode
+              ? 'https://www.tiktok.com/@usuario/live'
+              : 'https://www.facebook.com/TuPagina/videos/123456789'}
             className="w-full border border-slate-300 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent font-mono"
           />
           <p className="text-xs text-slate-400 mt-1">
-            Solo compatible con Facebook Live.
+            {redirectMode
+              ? 'Acepta cualquier URL (TikTok, Instagram, YouTube, etc.). Se abrirá en una pestaña nueva.'
+              : 'Solo Facebook y YouTube se pueden embeber en el modal de la landing.'}
           </p>
         </div>
 
-        {/* Aviso Facebook */}
-        <div className="flex items-start gap-2.5 bg-amber-50 border border-amber-200 rounded-xl p-3.5 text-sm text-amber-700">
-          <AlertCircle size={16} className="shrink-0 mt-0.5" />
-          <p>
-            Usa la URL directa del video o directo de Facebook
-            (ej: <span className="font-mono">https://www.facebook.com/TuPagina/videos/123456789</span>).
-            El video debe ser público y pertenecer a una Página de Facebook.
-          </p>
-        </div>
+        {/* Toggle de modo redirección */}
+        <label
+          htmlFor="redirect-mode"
+          className={`flex items-start gap-3 p-3.5 border rounded-xl cursor-pointer transition-colors ${
+            redirectMode
+              ? 'bg-blue-50 border-blue-300'
+              : 'bg-slate-50 border-slate-200 hover:bg-slate-100'
+          }`}
+        >
+          <input
+            id="redirect-mode"
+            type="checkbox"
+            checked={redirectMode}
+            onChange={(e) => setRedirectMode(e.target.checked)}
+            className="mt-0.5 w-4 h-4 accent-blue-600 cursor-pointer shrink-0"
+          />
+          <div className="flex-1 min-w-0">
+            <span className="text-sm font-semibold text-slate-700 flex items-center gap-1.5">
+              <ExternalLink size={14} className="text-slate-500" />
+              Solo redireccionar (no abrir modal)
+            </span>
+            <span className="text-xs text-slate-500 block mt-1 leading-relaxed">
+              Útil para TikTok Live, Instagram Live u otras plataformas que no permiten embed.
+              El botón en la landing dirá <span className="font-semibold">"ESTAMOS EN VIVO"</span> y
+              llevará al usuario directo al enlace en una pestaña nueva.
+            </span>
+          </div>
+        </label>
+
+        {/* Aviso solo cuando NO está en modo redirect */}
+        {!redirectMode && (
+          <div className="flex items-start gap-2.5 bg-amber-50 border border-amber-200 rounded-xl p-3.5 text-sm text-amber-700">
+            <AlertCircle size={16} className="shrink-0 mt-0.5" />
+            <p>
+              Para embed en el modal usa Facebook (video público de Página) o YouTube
+              (cualquier video o directo). Otras plataformas pueden no funcionar — para
+              esas activa "Solo redireccionar".
+            </p>
+          </div>
+        )}
 
         {/* Botón activar */}
         <button
@@ -289,7 +349,8 @@ const EventsManager: React.FC = () => {
           <li>Al activar, el botón rojo "Ver evento en vivo" aparece al instante en la landing.</li>
           <li>Al hacer clic en ese botón, los visitantes ven el directo en un modal.</li>
           <li>Al desactivar, el botón desaparece sin necesidad de deploy.</li>
-          <li>Solo funciona con Facebook Live (videos públicos de Páginas de Facebook).</li>
+          <li><strong>Modal embebido:</strong> Facebook (video público de Página) o YouTube.</li>
+          <li><strong>Solo redireccionar:</strong> cualquier otra plataforma (TikTok, Instagram, etc.).</li>
           <li>Puedes reutilizarlo para cualquier evento: sorteos, clases, anuncios, etc.</li>
         </ul>
       </div>
