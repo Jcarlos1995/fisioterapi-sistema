@@ -9,6 +9,7 @@ import {
   Menu,
   X,
   ChevronRight,
+  ChevronLeft,
   Activity,
   LogOut,
   BookOpen,
@@ -112,7 +113,18 @@ const App: React.FC = () => {
                   bg-white border-r border-slate-200 transition-all duration-300 flex flex-col shadow-xl lg:shadow-none
                 `}>
                   {/* Logo */}
-                  <div className="p-4 flex items-center justify-between lg:justify-center">
+                  <div className="p-4 flex items-center justify-between">
+                    {/* Botón ir a la landing — abre en nueva pestaña sin cerrar sesión */}
+                    <a
+                      href={LANDING_URL}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      title="Ver sitio web público"
+                      className="p-1.5 rounded-lg text-slate-400 hover:text-blue-600 hover:bg-blue-50 transition-colors shrink-0"
+                    >
+                      <ChevronLeft size={22} />
+                    </a>
+
                     {isSidebarOpen ? (
                       <img src={logoFisioterapia} alt="Fisioterapi Chepén" className="h-16 w-auto object-contain" />
                     ) : (
@@ -120,13 +132,17 @@ const App: React.FC = () => {
                         <Activity size={24} />
                       </div>
                     )}
+
                     {/* Botón cerrar en móvil (dentro del drawer) */}
                     <button
                       onClick={closeMobileMenu}
-                      className="lg:hidden p-2 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100"
+                      className="lg:hidden p-1.5 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100"
                     >
                       <X size={20} />
                     </button>
+
+                    {/* Spacer desktop para mantener el logo centrado cuando el sidebar está expandido */}
+                    <div className="hidden lg:block w-7 shrink-0" />
                   </div>
 
                   {/* Navegación */}
