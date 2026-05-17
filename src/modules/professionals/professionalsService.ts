@@ -1,7 +1,7 @@
 // Servicio de profesionales — toda la lógica de Firestore en un solo lugar.
 import {
   collection, addDoc, doc, updateDoc, deleteDoc,
-  onSnapshot, getDocs, Unsubscribe,
+  onSnapshot, getDocs, query, where, Unsubscribe,
 } from 'firebase/firestore';
 import { db } from '../../lib/firebase';
 import { Professional, UserPermissions } from '../../types';
@@ -62,4 +62,11 @@ export async function setUserActive(uid: string, active: boolean): Promise<void>
 /** Cambia el rol de un usuario. */
 export async function setUserRole(uid: string, role: string): Promise<void> {
   await updateDoc(doc(db, 'userRoles', uid), { role });
+}
+
+/** Busca el nombre del profesional por email. Devuelve el email si no se encuentra. */
+export async function fetchProfessionalByEmail(email: string): Promise<string> {
+  const snap = await getDocs(query(collection(db, 'professionals'), where('email', '==', email)));
+  if (snap.empty) return email;
+  return (snap.docs[0].data() as { name?: string }).name || email;
 }

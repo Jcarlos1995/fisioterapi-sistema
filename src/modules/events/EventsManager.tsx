@@ -17,28 +17,9 @@
 // ================================================================
 
 import React, { useState, useEffect } from 'react';
-import { doc, onSnapshot, setDoc } from 'firebase/firestore';
-import { db } from '../../lib/firebase';
 import { Radio, Globe, CheckCircle, XCircle, Tv, AlertCircle, ExternalLink } from 'lucide-react';
 import { useToast } from '../../context/ToastContext';
-
-type LiveEventMode = 'embed' | 'redirect';
-
-interface LiveEventDoc {
-  active: boolean;
-  facebookUrl: string;        // URL del directo (Facebook, YouTube, TikTok, etc.)
-  title: string;
-  mode: LiveEventMode;        // 'embed' = abre modal · 'redirect' = abre en nueva pestaña
-}
-
-const LIVE_EVENT_REF = doc(db, 'config', 'liveEvent');
-
-const DEFAULT_DOC: LiveEventDoc = {
-  active:      false,
-  facebookUrl: '',
-  title:       'Evento en Vivo',
-  mode:        'embed',
-};
+import { subscribeToLiveEvent, activateLiveEvent, deactivateLiveEvent, LiveEventDoc, LiveEventMode } from './eventsService';
 
 const EventsManager: React.FC = () => {
   const { showToast } = useToast();
@@ -56,17 +37,9 @@ const EventsManager: React.FC = () => {
 
   // Escucha en tiempo real el doc liveEvent
   useEffect(() => {
-    const unsub = onSnapshot(
-      LIVE_EVENT_REF,
-      (snap) => {
-        if (snap.exists()) {
-          const raw  = snap.data();
-          const data: LiveEventDoc = {
-            active:      Boolean(raw.active),
-            facebookUrl: String(raw.facebookUrl ?? ''),
-            title:       String(raw.title ?? 'Evento en Vivo'),
-            mode:        raw.mode === 'redirect' ? 'redirect' : 'embed',
-          };
+    return subscribeToLiveEvent(
+      (data) => {
+        if (data) {
           setCurrent(data);
           // Solo pre-rellena el form si no hay un evento activo (para no
           // interrumpir una edición en curso)
@@ -86,9 +59,8 @@ const EventsManager: React.FC = () => {
       (err) => {
         console.error('[EventsManager] onSnapshot error:', err);
         setLoadingDoc(false);
-      }
+      },
     );
-    return () => unsub();
   }, []);
 
   const handleActivate = async () => {
@@ -102,12 +74,12 @@ const EventsManager: React.FC = () => {
 
     setSaving(true);
     try {
-      await setDoc(LIVE_EVENT_REF, {
+      await activateLiveEvent({
         active:      true,
         facebookUrl: url,
         title:       title,
         mode:        redirectMode ? 'redirect' : 'embed',
-      } satisfies LiveEventDoc);
+      });
       showToast('¡Evento activado! El botón ya aparece en la landing.', 'success');
       setTitleInput('');
       setUrlInput('');
@@ -123,12 +95,7 @@ const EventsManager: React.FC = () => {
   const handleDeactivate = async () => {
     setDeactivating(true);
     try {
-      await setDoc(LIVE_EVENT_REF, {
-        active:      false,
-        facebookUrl: current?.facebookUrl ?? '',
-        title:       current?.title ?? 'Evento en Vivo',
-        mode:        current?.mode ?? 'embed',
-      } satisfies LiveEventDoc);
+      await deactivateLiveEvent();
       showToast('Evento desactivado. El botón ya no aparece en la landing.', 'success');
     } catch (err) {
       console.error('[EventsManager] Error desactivando evento:', err);

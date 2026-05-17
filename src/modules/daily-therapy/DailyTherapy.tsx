@@ -1,43 +1,19 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import {
-  collection, onSnapshot, query, where, orderBy,
-  addDoc, deleteDoc, doc, getDocs, updateDoc,
-} from 'firebase/firestore';
-import {
   CheckSquare, Square, ClipboardList, Search, Plus, X,
   Settings, History, User, Trash2, Calendar, WifiOff,
 } from 'lucide-react';
-import { db } from '../../lib/firebase';
 import { useAuth } from '../../context/AuthContext';
 import { useToast } from '../../context/ToastContext';
 import useEscKey from '../../shared/hooks/useEscKey';
 import { Patient } from '../../types';
-
-// ─── Interfaces ───────────────────────────────────────────────────────────────
-
-interface TherapyTask {
-  id: string;
-  name: string;
-  order: number;
-  active: boolean;
-  createdAt: string;
-}
-
-interface TherapyPatientTask {
-  id: string;
-  patientId: string;
-  patientName: string;
-  date: string;            // YYYY-MM-DD
-  taskId: string;
-  taskName: string;
-  assignedAt: string;
-  assignedByUid: string;
-  assignedByName: string;
-  done: boolean;
-  completedAt?: string;
-  completedByUid?: string;
-  completedByName?: string;
-}
+import {
+  subscribeToTherapyTasks, addTherapyTask, toggleTherapyTask, deleteTherapyTask,
+  subscribeToPatientTasks, assignPatientTask, unassignPatientTask, togglePatientTaskDone,
+  TherapyTask, TherapyPatientTask,
+} from './dailyTherapyService';
+import { subscribeToPatients } from '../patients/patientsService';
+import { fetchProfessionalByEmail } from '../professionals/professionalsService';
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -80,23 +56,16 @@ const DailyTherapy: React.FC = () => {
   const [professionalName, setProfessionalName] = useState('');
   useEffect(() => {
     if (!user?.email) return;
-    getDocs(query(collection(db, 'professionals'), where('email', '==', user.email)))
-      .then(snap => {
-        setProfessionalName(
-          snap.empty
-            ? (user.email ?? '')
-            : ((snap.docs[0].data() as { name?: string }).name || user.email || '')
-        );
-      })
+    fetchProfessionalByEmail(user.email)
+      .then(name => setProfessionalName(name))
       .catch(() => setProfessionalName(user?.email ?? ''));
   }, [user?.email]);
 
   // ─── Plantilla global de tareas ──────────────────────────────────────────────
   const [tasks, setTasks] = useState<TherapyTask[]>([]);
   useEffect(() => {
-    return onSnapshot(
-      query(collection(db, 'therapyTasks'), orderBy('createdAt', 'desc')),
-      snap => { setLoadError(null); setTasks(snap.docs.map(d => ({ id: d.id, ...d.data() } as TherapyTask))); },
+    return subscribeToTherapyTasks(
+      (data) => { setLoadError(null); setTasks(data); },
       onSnapErr('therapyTasks'),
     );
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -117,10 +86,7 @@ const DailyTherapy: React.FC = () => {
     setAddingTask(true);
     try {
       const maxOrder = tasks.length > 0 ? Math.max(...tasks.map(t => t.order)) : 0;
-      await addDoc(collection(db, 'therapyTasks'), {
-        name, order: maxOrder + 1, active: true,
-        createdAt: new Date().toISOString(),
-      });
+      await addTherapyTask(name, maxOrder + 1);
       setNewTaskName('');
     } catch {
       showToast('No se pudo agregar la tarea.', 'error');
@@ -131,7 +97,7 @@ const DailyTherapy: React.FC = () => {
 
   const handleToggleTaskActive = async (task: TherapyTask) => {
     try {
-      await updateDoc(doc(db, 'therapyTasks', task.id), { active: !task.active });
+      await toggleTherapyTask(task.id, task.active);
     } catch {
       showToast('No se pudo actualizar la tarea.', 'error');
     }
@@ -139,7 +105,7 @@ const DailyTherapy: React.FC = () => {
 
   const handleDeleteTask = async (taskId: string) => {
     try {
-      await deleteDoc(doc(db, 'therapyTasks', taskId));
+      await deleteTherapyTask(taskId);
       showToast('Tarea eliminada.');
     } catch {
       showToast('No se pudo eliminar la tarea.', 'error');
@@ -156,9 +122,8 @@ const DailyTherapy: React.FC = () => {
   const [showDropdown, setShowDropdown] = useState(false);
 
   useEffect(() => {
-    return onSnapshot(
-      query(collection(db, 'patients'), orderBy('name')),
-      snap => setPatients(snap.docs.map(d => ({ id: d.id, ...d.data() } as Patient))),
+    return subscribeToPatients(
+      (data) => setPatients(data),
       onSnapErr('patients'),
     );
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -179,13 +144,10 @@ const DailyTherapy: React.FC = () => {
 
   useEffect(() => {
     if (!selectedPatientId) { setTodayTasks([]); return; }
-    return onSnapshot(
-      query(
-        collection(db, 'therapyPatientTasks'),
-        where('patientId', '==', selectedPatientId),
-        where('date', '==', TODAY)
-      ),
-      snap => setTodayTasks(snap.docs.map(d => ({ id: d.id, ...d.data() } as TherapyPatientTask))),
+    return subscribeToPatientTasks(
+      selectedPatientId,
+      TODAY,
+      (data) => setTodayTasks(data),
       onSnapErr('todayTasks'),
     );
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -199,16 +161,10 @@ const DailyTherapy: React.FC = () => {
   useEffect(() => {
     if (!selectedPatientId) { setHistoryTasks([]); return; }
     setLoadingHistory(true);
-    return onSnapshot(
-      query(
-        collection(db, 'therapyPatientTasks'),
-        where('patientId', '==', selectedPatientId),
-        where('date', '==', historyDate)
-      ),
-      snap => {
-        setHistoryTasks(snap.docs.map(d => ({ id: d.id, ...d.data() } as TherapyPatientTask)));
-        setLoadingHistory(false);
-      },
+    return subscribeToPatientTasks(
+      selectedPatientId,
+      historyDate,
+      (data) => { setHistoryTasks(data); setLoadingHistory(false); },
       (err) => { onSnapErr('historyTasks')(err); setLoadingHistory(false); },
     );
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -228,18 +184,16 @@ const DailyTherapy: React.FC = () => {
     addPending(task.id);
     try {
       if (existing) {
-        await deleteDoc(doc(db, 'therapyPatientTasks', existing.id));
+        await unassignPatientTask(existing.id);
       } else {
-        await addDoc(collection(db, 'therapyPatientTasks'), {
+        await assignPatientTask({
           patientId:      selectedPatient.id,
           patientName:    selectedPatient.name,
           date:           TODAY,
           taskId:         task.id,
           taskName:       task.name,
-          assignedAt:     new Date().toISOString(),
           assignedByUid:  user?.uid ?? '',
           assignedByName: professionalName,
-          done:           false,
         });
       }
     } catch {
@@ -254,18 +208,12 @@ const DailyTherapy: React.FC = () => {
     if (!canMark || pendingIds.has(pt.taskId)) return;
     addPending(pt.taskId);
     try {
-      if (pt.done) {
-        await updateDoc(doc(db, 'therapyPatientTasks', pt.id), {
-          done: false, completedAt: null, completedByUid: null, completedByName: null,
-        });
-      } else {
-        await updateDoc(doc(db, 'therapyPatientTasks', pt.id), {
-          done:            true,
-          completedAt:     new Date().toISOString(),
-          completedByUid:  user?.uid ?? '',
-          completedByName: professionalName,
-        });
-      }
+      await togglePatientTaskDone({
+        taskDocId:       pt.id,
+        done:            pt.done,
+        completedByUid:  user?.uid ?? '',
+        completedByName: professionalName,
+      });
     } catch {
       showToast('No se pudo actualizar la tarea.', 'error');
     } finally {

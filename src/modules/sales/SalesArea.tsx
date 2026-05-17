@@ -1,46 +1,17 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import {
-  collection, onSnapshot, query, orderBy,
-  addDoc, doc, getDoc, setDoc, getDocs, deleteDoc,
-} from 'firebase/firestore';
-import {
   Lock, Plus, Settings2, Wrench, Package,
   TrendingUp, Search, X, ChevronDown, BadgeDollarSign, User, CalendarRange, Trash2, WifiOff,
 } from 'lucide-react';
-import { db } from '../../lib/firebase';
 import { useAuth } from '../../context/AuthContext';
 import { useToast } from '../../context/ToastContext';
 import useEscKey from '../../shared/hooks/useEscKey';
-import { Patient, Professional } from '../../types';
-
-// ─── Interfaces ───────────────────────────────────────────────────────────────
-
-interface Sale {
-  id: string;
-  type: 'service' | 'product';
-  patientId: string;
-  patientName: string;
-  itemName: string;
-  itemId?: string;
-  unitPrice: number;
-  qty: number;
-  total: number;
-  date: string;             // YYYY-MM-DD — fecha de pago
-  sessionId?: string;       // referencia a la sesión que originó la venta
-  validOnlyToday: boolean;  // true = sesión única, false = pack con rango
-  validFrom?: string;       // YYYY-MM-DD — inicio de vigencia del pack
-  validTo?: string;         // YYYY-MM-DD — fin de vigencia del pack
-  notes?: string;
-  createdAt: string;
-  createdByUid: string;
-  createdByName: string;
-}
-
-interface TherapyTask {
-  id: string;
-  name: string;
-  active: boolean;
-}
+import { Patient } from '../../types';
+import { subscribeToSales, fetchServicePrices, saveServicePrices, deleteSale, createSale, Sale, SalePayload } from './salesService';
+import { subscribeToTherapyTasks, TherapyTask } from '../daily-therapy/dailyTherapyService';
+import { subscribeToPatients } from '../patients/patientsService';
+import { subscribeToProducts } from '../products/productsService';
+import { fetchProfessionalByEmail } from '../professionals/professionalsService';
 
 interface PortalProduct {
   id: string;
@@ -89,21 +60,15 @@ const SalesArea: React.FC = () => {
   const [staffName, setStaffName] = useState('');
   useEffect(() => {
     if (!user?.email) return;
-    getDocs(query(collection(db, 'professionals')))
-      .then(snap => {
-        type ProfData = Pick<Professional, 'email' | 'name'>;
-        const match = snap.docs.find(d => (d.data() as ProfData).email === user.email);
-        setStaffName(match ? (match.data() as ProfData).name || user.email! : user.email!);
-      })
+    fetchProfessionalByEmail(user.email)
+      .then(name => setStaffName(name))
       .catch(() => setStaffName(user?.email ?? ''));
   }, [user?.email]);
 
   // ── Precios de servicios ─────────────────────────────────────────────────────
   const [servicePrices, setServicePrices] = useState<Record<string, number>>({});
   useEffect(() => {
-    getDoc(doc(db, 'servicePrices', 'default')).then(snap => {
-      if (snap.exists()) setServicePrices(snap.data() as Record<string, number>);
-    });
+    fetchServicePrices().then(prices => setServicePrices(prices));
   }, []);
 
   // ── Tareas globales (servicios del catálogo) ─────────────────────────────────
@@ -114,9 +79,8 @@ const SalesArea: React.FC = () => {
 
   const [therapyTasks, setTherapyTasks] = useState<TherapyTask[]>([]);
   useEffect(() => {
-    return onSnapshot(
-      query(collection(db, 'therapyTasks'), orderBy('createdAt', 'desc')),
-      snap => setTherapyTasks(snap.docs.map(d => ({ id: d.id, ...d.data() } as TherapyTask))),
+    return subscribeToTherapyTasks(
+      (data) => setTherapyTasks(data),
       onSnapErr('therapyTasks'),
     );
   }, []);
@@ -125,20 +89,20 @@ const SalesArea: React.FC = () => {
   // ── Productos ────────────────────────────────────────────────────────────────
   const [products, setProducts] = useState<PortalProduct[]>([]);
   useEffect(() => {
-    getDocs(query(collection(db, 'products'), orderBy('name')))
-      .then(snap => setProducts(snap.docs.map(d => ({ id: d.id, ...d.data() } as PortalProduct))))
-      .catch(err => {
-        console.error('getDocs [products]:', err);
+    return subscribeToProducts(
+      (data) => setProducts(data.map(p => ({ id: p.id, name: p.name, category: p.category, price: p.price }))),
+      (err) => {
+        console.error('subscribeToProducts:', err);
         setLoadError('No se pudieron cargar los productos. Verifica tu conexión.');
-      });
+      },
+    );
   }, []);
 
   // ── Pacientes ────────────────────────────────────────────────────────────────
   const [patients, setPatients] = useState<Patient[]>([]);
   useEffect(() => {
-    return onSnapshot(
-      query(collection(db, 'patients'), orderBy('name')),
-      snap => { setLoadError(null); setPatients(snap.docs.map(d => ({ id: d.id, ...d.data() } as Patient))); },
+    return subscribeToPatients(
+      (data) => { setLoadError(null); setPatients(data); },
       onSnapErr('patients'),
     );
   }, []);
@@ -146,9 +110,8 @@ const SalesArea: React.FC = () => {
   // ── Ventas ───────────────────────────────────────────────────────────────────
   const [sales, setSales] = useState<Sale[]>([]);
   useEffect(() => {
-    return onSnapshot(
-      query(collection(db, 'sales'), orderBy('date', 'desc'), orderBy('createdAt', 'desc')),
-      snap => setSales(snap.docs.map(d => ({ id: d.id, ...d.data() } as Sale))),
+    return subscribeToSales(
+      (data) => setSales(data),
       onSnapErr('sales'),
     );
   }, []);
@@ -185,7 +148,7 @@ const SalesArea: React.FC = () => {
   const handleDeleteSale = async (id: string) => {
     if (!window.confirm('¿Eliminar esta venta? Esta acción no se puede deshacer.')) return;
     try {
-      await deleteDoc(doc(db, 'sales', id));
+      await deleteSale(id);
       showToast('Venta eliminada.');
     } catch {
       showToast('No se pudo eliminar la venta.', 'error');
@@ -380,7 +343,7 @@ const SalesArea: React.FC = () => {
           onClose={() => setShowPrices(false)}
           onSave={async (updated) => {
             try {
-              await setDoc(doc(db, 'servicePrices', 'default'), updated);
+              await saveServicePrices(updated);
               setServicePrices(updated);
               showToast('Precios actualizados correctamente.');
               setShowPrices(false);
@@ -401,12 +364,7 @@ const SalesArea: React.FC = () => {
           onClose={() => setShowRegister(false)}
           onSubmit={async (payload) => {
             try {
-              await addDoc(collection(db, 'sales'), {
-                ...payload,
-                createdAt:     new Date().toISOString(),
-                createdByUid:  user?.uid ?? '',
-                createdByName: staffName,
-              });
+              await createSale(payload, user?.uid ?? '', staffName);
               showToast('Venta registrada correctamente.');
               setShowRegister(false);
             } catch {
@@ -498,22 +456,6 @@ const PricesModal: React.FC<PricesModalProps> = ({ prices, tasks, onClose, onSav
 };
 
 // ─── Modal: Registrar venta ───────────────────────────────────────────────────
-
-interface SalePayload {
-  type: 'service' | 'product';
-  patientId: string;
-  patientName: string;
-  itemName: string;
-  itemId?: string;
-  unitPrice: number;
-  qty: number;
-  total: number;
-  date: string;
-  validOnlyToday: boolean;
-  validFrom?: string;
-  validTo?: string;
-  notes: string;
-}
 
 /** Solo los campos del paciente que el modal de venta necesita. */
 interface SalePatient { id: string; name: string; dni: string; }

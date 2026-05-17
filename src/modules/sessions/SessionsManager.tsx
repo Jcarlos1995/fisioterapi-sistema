@@ -12,9 +12,8 @@ import {
   createAutoSale, updateSessionStatus, createSession, deleteSession,
 } from './sessionsService';
 import { subscribeToPatients } from '../patients/patientsService';
-import { subscribeToProfessionals } from '../professionals/professionalsService';
-import { onSnapshot, collection, getDocs, query, where } from 'firebase/firestore';
-import { db } from '../../lib/firebase';
+import { subscribeToProfessionals, fetchProfessionalByEmail } from '../professionals/professionalsService';
+import { subscribeToTherapyTasks } from '../daily-therapy/dailyTherapyService';
 
 // ─── Tipos locales ─────────────────────────────────────────────────────────────
 
@@ -100,10 +99,8 @@ const SessionsManager: React.FC = () => {
       (data) => setProfessionals(data),
       onErr('professionals'),
     );
-    // therapyTasks no tiene servicio propio aún — onSnapshot directo provisional
-    const unsubTasks = onSnapshot(
-      collection(db, 'therapyTasks'),
-      (snap) => setTherapyTasks(snap.docs.map(d => ({ id: d.id, ...d.data() }) as TherapyTask)),
+    const unsubTasks = subscribeToTherapyTasks(
+      (data) => setTherapyTasks(data),
       onErr('therapyTasks'),
     );
 
@@ -118,10 +115,9 @@ const SessionsManager: React.FC = () => {
   // Nombre del profesional logueado
   useEffect(() => {
     if (!user?.email) return;
-    const email = user.email;
-    getDocs(query(collection(db, 'professionals'), where('email', '==', email)))
-      .then(snap => setStaffName(snap.empty ? email : ((snap.docs[0].data() as Pick<Professional, 'name'>).name || email)))
-      .catch(() => setStaffName(email));
+    fetchProfessionalByEmail(user.email)
+      .then(name => setStaffName(name))
+      .catch(() => setStaffName(user.email!));
   }, [user?.email]);
 
   // ── Helpers ──────────────────────────────────────────────────────────────────

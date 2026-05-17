@@ -1,8 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Story } from '../../types';
-import { ref, deleteObject } from 'firebase/storage';
-import { storage } from '../../lib/firebase';
-import { fetchStories, uploadStoryBlob, saveStory, deleteStory } from './storiesService';
+import { fetchStories, uploadStoryBlob, saveStory, deleteStory, deleteStoryImage } from './storiesService';
 import { BookOpen, Plus, Trash2, HeartPulse, Loader2, Calendar, Image as ImageIcon, X } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { useToast } from '../../context/ToastContext';
@@ -136,7 +134,7 @@ const Stories: React.FC = () => {
     setConfirmDelete(null);
     await deleteStory(id);
     if (imageUrl && imageUrl.startsWith('https://firebasestorage')) {
-      try { await deleteObject(ref(storage, imageUrl)); } catch { /* ya eliminado */ }
+      try { await deleteStoryImage(imageUrl); } catch { /* ya eliminado */ }
     }
     void loadStories();
     showToast('Historia eliminada');

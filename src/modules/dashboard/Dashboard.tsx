@@ -3,27 +3,18 @@ import {
   Users, UserSquare2, Package, BrainCircuit,
   Activity, Calendar, ClipboardList, AlertTriangle, X, BellRing, ArrowRight, CheckCheck, WifiOff,
 } from 'lucide-react';
-import { auth, db } from '../../lib/firebase';
+import { auth } from '../../lib/firebase';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
 import { Link } from 'react-router-dom';
-import { collection, doc, onSnapshot, orderBy, query, updateDoc, where } from 'firebase/firestore';
 import StatCard from '../../shared/components/StatCard';
 import { useDashboardData } from './hooks/useDashboardData';
 import { useAuth } from '../../context/AuthContext';
 import { useToast } from '../../context/ToastContext';
 import { SkeletonStatCards, SkeletonCharts, SkeletonHeader } from '../../shared/components/SkeletonLoader';
+import { subscribeToCancellationNotifications, markNotificationRead, CancellationNotification } from './dashboardService';
 
 const MONTHS = ["Enero","Febrero","Marzo","Abril","Mayo","Junio","Julio","Agosto","Septiembre","Octubre","Noviembre","Diciembre"];
 const COLORS  = ['#10b981', '#3b82f6', '#6366f1', '#f59e0b'];
-
-interface CancellationNotification {
-  id: string;
-  patientName: string;
-  therapyType: string;
-  sessionDate: string;
-  sessionTime: string;
-  reason?: string | null;
-}
 
 const Dashboard: React.FC = () => {
   const { isTI, permissions } = useAuth();
@@ -38,21 +29,10 @@ const Dashboard: React.FC = () => {
   const { stats, chartData, webPendingAppointments, loadError, isLoading } = useDashboardData(selectedMonth);
 
   useEffect(() => {
-    const q = query(
-      collection(db, 'cancellationNotifications'),
-      where('read', '==', false),
-      orderBy('cancelledAt', 'desc')
+    return subscribeToCancellationNotifications(
+      (rows) => setCancellations(rows),
+      (err) => console.error('[Dashboard] cancellationNotifications:', err),
     );
-
-    const unsub = onSnapshot(q, (snapshot) => {
-      const rows = snapshot.docs.map((item) => {
-        const data = item.data() as Omit<CancellationNotification, 'id'>;
-        return { id: item.id, ...data };
-      });
-      setCancellations(rows);
-    });
-
-    return () => unsub();
   }, []);
 
   const generateAnalysis = async () => {
@@ -124,7 +104,7 @@ const Dashboard: React.FC = () => {
   const markAsRead = async (id: string) => {
     if (!(isTI || permissions.appointments.edit)) return;
     try {
-      await updateDoc(doc(db, 'cancellationNotifications', id), { read: true });
+      await markNotificationRead(id);
       showToast('Cancelación marcada como leída.');
     } catch {
       showToast('No se pudo marcar la notificación como leída.', 'error');

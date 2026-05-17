@@ -3,7 +3,7 @@ import {
   collection, addDoc, doc, updateDoc, deleteDoc,
   onSnapshot, getDocs, Unsubscribe,
 } from 'firebase/firestore';
-import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
+import { ref, uploadBytes, getDownloadURL, deleteObject } from 'firebase/storage';
 import { db, storage } from '../../lib/firebase';
 import { Story } from '../../types';
 
@@ -43,4 +43,9 @@ export async function fetchStories(): Promise<Story[]> {
 /** Elimina una historia. */
 export async function deleteStory(id: string): Promise<void> {
   await deleteDoc(doc(db, 'stories', id));
+}
+
+/** Elimina la imagen de una historia del Storage. */
+export async function deleteStoryImage(imageUrl: string): Promise<void> {
+  await deleteObject(ref(storage, imageUrl));
 }
