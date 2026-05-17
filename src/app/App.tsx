@@ -1,22 +1,13 @@
 import React, { useState } from 'react';
 import { HashRouter as Router, Routes, Route, Link, useLocation } from 'react-router-dom';
 import {
-  Users,
-  UserSquare2,
-  Package,
-  LayoutDashboard,
-  CalendarDays,
   Menu,
   X,
   ChevronRight,
   ChevronLeft,
   Activity,
   LogOut,
-  BookOpen,
   KeyRound,
-  ClipboardList,
-  BadgeDollarSign,
-  Radio,
 } from 'lucide-react';
 
 import { signOut } from 'firebase/auth';
@@ -24,21 +15,13 @@ import { auth } from '../lib/firebase';
 import { LANDING_URL } from '../config';
 import logoFisioterapia from '../assets/logo-fisioterapia.png';
 
-import Dashboard from '../modules/dashboard/Dashboard';
 import { useAuth } from '../context/AuthContext';
 import Login from '../modules/auth/Login';
-import PatientsManager from '../modules/patients/PatientsManager';
-import ProfessionalsManager from '../modules/professionals/ProfessionalsManager';
-import ProductsManager from '../modules/products/ProductsManager';
-import SessionsManager from '../modules/sessions/SessionsManager';
 import BookingSystem from '../modules/booking/BookingSystem';
-import Stories from '../modules/stories/Stories';
 import ChangePasswordModal from '../modules/auth/ChangePasswordModal';
 import PatientPortal from '../modules/portal/PatientPortal';
 import { PatientAuthProvider } from '../context/PatientAuthContext';
-import DailyTherapy from '../modules/daily-therapy/DailyTherapy';
-import SalesArea from '../modules/sales/SalesArea';
-import EventsManager from '../modules/events/EventsManager';
+import { APP_ROUTES } from './routes';
 
 const App: React.FC = () => {
   const { user, loading, isTI, role } = useAuth();
@@ -147,19 +130,23 @@ const App: React.FC = () => {
 
                   {/* Navegación */}
                   <nav className="flex-1 mt-2 px-4 space-y-2 overflow-y-auto">
-                    <SidebarItem to="/"            icon={<LayoutDashboard size={20} />} label="Dashboard"     expanded={isSidebarOpen} onNavClick={closeMobileMenu} />
-                    <SidebarItem to="/patients"    icon={<Users size={20} />}           label="Pacientes"     expanded={isSidebarOpen} onNavClick={closeMobileMenu} />
-                    <SidebarItem to="/professionals" icon={<UserSquare2 size={20} />}   label="Profesionales" expanded={isSidebarOpen} onNavClick={closeMobileMenu} />
-                    <SidebarItem to="/products"    icon={<Package size={20} />}         label="Productos"     expanded={isSidebarOpen} onNavClick={closeMobileMenu} />
-                    <SidebarItem to="/sessions"    icon={<CalendarDays size={20} />}    label="Sesiones"      expanded={isSidebarOpen} onNavClick={closeMobileMenu} />
-                    <SidebarItem to="/stories"     icon={<BookOpen size={20} />}        label="Historias"     expanded={isSidebarOpen} onNavClick={closeMobileMenu} />
-                    <SidebarItem to="/daily-therapy" icon={<ClipboardList size={20} />} label="Terapia Diaria" expanded={isSidebarOpen} onNavClick={closeMobileMenu} />
-                    {isAdminOrTI && (
-                      <SidebarItem to="/sales-area" icon={<BadgeDollarSign size={20} />} label="Área Reservada" expanded={isSidebarOpen} onNavClick={closeMobileMenu} />
-                    )}
-                    {isTI && (
-                      <SidebarItem to="/events" icon={<Radio size={20} />} label="Eventos" expanded={isSidebarOpen} onNavClick={closeMobileMenu} />
-                    )}
+                    {APP_ROUTES
+                      .filter(r =>
+                        r.access === 'all' ||
+                        (r.access === 'adminOrTI' && isAdminOrTI) ||
+                        (r.access === 'ti' && isTI)
+                      )
+                      .map(r => (
+                        <SidebarItem
+                          key={r.path}
+                          to={r.path}
+                          icon={r.icon}
+                          label={r.label}
+                          expanded={isSidebarOpen}
+                          onNavClick={closeMobileMenu}
+                        />
+                      ))
+                    }
                   </nav>
 
                   {/* Footer del sidebar */}
@@ -218,15 +205,9 @@ const App: React.FC = () => {
                   <main className="flex-1 overflow-auto">
                     <div className="p-4 sm:p-6 lg:p-8 max-w-7xl mx-auto">
                       <Routes>
-                        <Route path="/"             element={<Dashboard />} />
-                        <Route path="/patients"     element={<PatientsManager />} />
-                        <Route path="/professionals" element={<ProfessionalsManager />} />
-                        <Route path="/products"     element={<ProductsManager />} />
-                        <Route path="/sessions"     element={<SessionsManager />} />
-                        <Route path="/stories"      element={<Stories />} />
-                        <Route path="/daily-therapy" element={<DailyTherapy />} />
-                        <Route path="/sales-area"   element={<SalesArea />} />
-                        <Route path="/events"       element={<EventsManager />} />
+                        {APP_ROUTES.map(r => (
+                          <Route key={r.path} path={r.path} element={<r.component />} />
+                        ))}
                       </Routes>
                     </div>
                   </main>
