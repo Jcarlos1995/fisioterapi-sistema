@@ -8,7 +8,7 @@ import { PatientPortalSession } from './hooks/usePatientAppointments';
 import { getCancellationEligibility } from '../../shared/utils/cancellation';
 import { PortalPatient } from './types';
 import CancelAppointmentModal from './CancelAppointmentModal';
-import PatientAppointmentCard from './PatientAppointmentCard';
+import PatientAppointmentCard, { AppointmentCardSession } from './PatientAppointmentCard';
 
 interface PatientAppointmentsListProps {
   patient: PortalPatient;
@@ -45,7 +45,7 @@ const getSessionDateMs = (session: PatientPortalSession): number => {
   return Number.isNaN(date.getTime()) ? 0 : date.getTime();
 };
 
-const getCancelInfo = (session: PatientPortalSession): { allowed: boolean; message?: string } => {
+const getCancelInfo = (session: AppointmentCardSession): { allowed: boolean; message?: string } => {
   const eligibility = getCancellationEligibility(session.status, session.date, session.time);
   return { allowed: eligibility.cancelable, message: eligibility.message };
 };
@@ -54,7 +54,7 @@ const PatientAppointmentsList: React.FC<PatientAppointmentsListProps> = ({ patie
   const { showToast } = useToast();
   const { appointments, loading, error, refresh } = usePatientAppointments(patient.id, patient.dni);
   const [activeSection, setActiveSection] = useState<SectionType>('upcoming');
-  const [selectedSession, setSelectedSession] = useState<PatientPortalSession | null>(null);
+  const [selectedSession, setSelectedSession] = useState<AppointmentCardSession | null>(null);
 
   const grouped = useMemo(() => {
     const now = Date.now();
@@ -71,7 +71,7 @@ const PatientAppointmentsList: React.FC<PatientAppointmentsListProps> = ({ patie
 
   const currentItems = grouped[activeSection];
 
-  const handleCancelClick = (session: PatientPortalSession) => {
+  const handleCancelClick = (session: AppointmentCardSession) => {
     const info = getCancelInfo(session);
     if (!info.allowed) {
       showToast(info.message || 'No se puede cancelar esta cita.', 'warning');

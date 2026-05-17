@@ -2,11 +2,14 @@ import React from 'react';
 import { Clock, UserSquare2, XCircle } from 'lucide-react';
 import { Session } from '../../types';
 
+/** Solo los campos que esta tarjeta necesita mostrar y pasar al handler de cancelación. */
+export type AppointmentCardSession = Pick<Session, 'id' | 'status' | 'therapyType' | 'date' | 'time'>;
+
 interface PatientAppointmentCardProps {
-  session: Session;
+  session: AppointmentCardSession;
   professionalName: string;
   cancelInfo?: { allowed: boolean; message?: string };
-  onCancel: (session: Session) => void;
+  onCancel: (session: AppointmentCardSession) => void;
 }
 
 const STATUS_CONFIG: Record<string, { border: string; badge: string }> = {

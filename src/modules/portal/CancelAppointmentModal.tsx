@@ -1,10 +1,16 @@
 import React, { useState } from 'react';
 import { X } from 'lucide-react';
 import useEscKey from '../../shared/hooks/useEscKey';
-import { Session } from '../../types';
+
+/** Solo los campos que el modal necesita mostrar en el resumen de la cita. */
+interface CancelModalSession {
+  date: string;
+  time: string;
+  therapyType: string;
+}
 
 interface CancelAppointmentModalProps {
-  session: Session;
+  session: CancelModalSession;
   onClose: () => void;
   onConfirm: (reason: string) => Promise<void>;
 }

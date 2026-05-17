@@ -515,8 +515,11 @@ interface SalePayload {
   notes: string;
 }
 
+/** Solo los campos del paciente que el modal de venta necesita. */
+interface SalePatient { id: string; name: string; dni: string; }
+
 interface RegisterSaleModalProps {
-  patients: Patient[];
+  patients: SalePatient[];
   products: PortalProduct[];
   therapyTasks: TherapyTask[];
   servicePrices: Record<string, number>;
@@ -529,7 +532,7 @@ const RegisterSaleModal: React.FC<RegisterSaleModalProps> = ({
 }) => {
   const [type, setType]           = useState<'service' | 'product'>('service');
   const [patientSearch, setPatientSearch] = useState('');
-  const [selectedPatient, setSelectedPatient] = useState<Patient | null>(null);
+  const [selectedPatient, setSelectedPatient] = useState<SalePatient | null>(null);
   const [showDropdown, setShowDropdown]       = useState(false);
   const [itemName, setItemName]   = useState('');
   const [itemId, setItemId]       = useState('');
