@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { db, storage } from '../../lib/firebase';
 import { Story } from '../../types';
-import { collection, addDoc, getDocs, deleteDoc, doc, query } from 'firebase/firestore';
-import { ref, uploadBytes, getDownloadURL, deleteObject } from 'firebase/storage';
+import { ref, deleteObject } from 'firebase/storage';
+import { storage } from '../../lib/firebase';
+import { fetchStories, uploadStoryBlob, saveStory, deleteStory } from './storiesService';
 import { BookOpen, Plus, Trash2, HeartPulse, Loader2, Calendar, Image as ImageIcon, X } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { useToast } from '../../context/ToastContext';
@@ -27,7 +27,7 @@ const Stories: React.FC = () => {
   });
 
   useEffect(() => {
-    fetchStories();
+    loadStories();
   }, []);
 
   // Limpiar la URL de previsualización para evitar fugas de memoria
@@ -37,17 +37,12 @@ const Stories: React.FC = () => {
     };
   }, [previewUrl]);
 
-  const fetchStories = async () => {
+  const loadStories = async () => {
     try {
-      const q = query(collection(db, 'stories'));
-      const querySnapshot = await getDocs(q);
-      const data = querySnapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data()
-      })) as Story[];
+      const data = await fetchStories();
       setStories(data);
     } catch (e) {
-      console.error("Error al traer historias:", e);
+      console.error('Error al traer historias:', e);
     } finally {
       setLoading(false);
     }
@@ -100,15 +95,13 @@ const Stories: React.FC = () => {
 
       if (imageFile) {
         const blob = await compressToBlob(imageFile);
-        const storageRef = ref(storage, `stories/${Date.now()}_${imageFile.name}`);
-        await uploadBytes(storageRef, blob, { contentType: 'image/jpeg' });
-        imageUrl = await getDownloadURL(storageRef);
+        imageUrl = await uploadStoryBlob(blob, imageFile.name);
       }
 
-      await addDoc(collection(db, 'stories'), {
+      await saveStory({
         patientName: formData.name,
-        diagnosis: formData.diagnosis,
-        testimony: formData.text,
+        diagnosis:   formData.diagnosis,
+        testimony:   formData.text,
         displayDate: formData.date,
         imageUrl,
       });
@@ -116,7 +109,7 @@ const Stories: React.FC = () => {
       setFormData({ name: '', diagnosis: '', text: '', date: '' });
       setImageFile(null);
       setPreviewUrl(null);
-      fetchStories();
+      void loadStories();
       showToast('Historia publicada');
     } catch (e: any) {
       console.error("Error al guardar:", e);
@@ -141,11 +134,11 @@ const Stories: React.FC = () => {
     if (!confirmDelete) return;
     const { id, imageUrl } = confirmDelete;
     setConfirmDelete(null);
-    await deleteDoc(doc(db, 'stories', id));
+    await deleteStory(id);
     if (imageUrl && imageUrl.startsWith('https://firebasestorage')) {
       try { await deleteObject(ref(storage, imageUrl)); } catch { /* ya eliminado */ }
     }
-    fetchStories();
+    void loadStories();
     showToast('Historia eliminada');
   };
 

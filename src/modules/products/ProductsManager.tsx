@@ -2,12 +2,11 @@ import React, { useState, useEffect } from 'react';
 import { Package, Plus, Minus, Trash2, AlertTriangle, WifiOff } from 'lucide-react';
 import { SkeletonHeader, SkeletonTableRows } from '../../shared/components/SkeletonLoader';
 import { Product } from '../../types';
-import { db } from '../../lib/firebase';
-import { collection, onSnapshot, addDoc, deleteDoc, doc, updateDoc } from 'firebase/firestore';
 import { useAuth } from '../../context/AuthContext';
 import { useToast } from '../../context/ToastContext';
 import useEscKey from '../../shared/hooks/useEscKey';
 import ConfirmModal from '../../shared/components/ConfirmModal';
+import { subscribeToProducts, createProduct, adjustStock, deleteProduct } from './productsService';
 
 const ProductsManager: React.FC = () => {
   const { isTI, permissions } = useAuth();
@@ -26,13 +25,8 @@ const ProductsManager: React.FC = () => {
   });
 
   useEffect(() => {
-    const unsub = onSnapshot(
-      collection(db, 'products'),
-      (snapshot) => {
-        setLoadError(null);
-        setIsLoading(false);
-        setProducts(snapshot.docs.map(d => ({ id: d.id, ...d.data() }) as Product));
-      },
+    const unsub = subscribeToProducts(
+      (data) => { setLoadError(null); setIsLoading(false); setProducts(data); },
       (err) => {
         console.error('onSnapshot [products]:', err);
         setLoadError('No se pudo cargar el inventario. Verifica tu conexión e intenta de nuevo.');
@@ -41,17 +35,12 @@ const ProductsManager: React.FC = () => {
     return () => unsub();
   }, []);
 
-  // --- NUEVA FUNCIÓN PARA ACTUALIZAR STOCK ---
   const handleUpdateStock = async (id: string, currentStock: number, change: number) => {
-    const newStock = currentStock + change;
-    if (newStock < 0) return; // Evita stock negativo
-
     try {
-      const productRef = doc(db, 'products', id);
-      await updateDoc(productRef, { stock: newStock });
+      await adjustStock(id, currentStock, change);
       showToast('Stock actualizado');
     } catch (error) {
-      console.error("Error actualizando stock:", error);
+      console.error('Error actualizando stock:', error);
     }
   };
 
@@ -59,16 +48,12 @@ const ProductsManager: React.FC = () => {
     e.preventDefault();
     if (!newProduct.name || newProduct.price <= 0) return;
     try {
-      await addDoc(collection(db, 'products'), {
-        ...newProduct,
-        price: Number(newProduct.price),
-        stock: Number(newProduct.stock)
-      });
+      await createProduct(newProduct as Omit<Product, 'id'>);
       setNewProduct({ name: '', category: '', price: 0, stock: 0 });
       setIsModalOpen(false);
       showToast();
     } catch (error) {
-      console.error("Error al añadir producto:", error);
+      console.error('Error al añadir producto:', error);
     }
   };
 
@@ -78,7 +63,7 @@ const ProductsManager: React.FC = () => {
     if (!confirmDeleteId) return;
     const id = confirmDeleteId;
     setConfirmDeleteId(null);
-    await deleteDoc(doc(db, 'products', id));
+    await deleteProduct(id);
     showToast('Producto eliminado');
   };
 

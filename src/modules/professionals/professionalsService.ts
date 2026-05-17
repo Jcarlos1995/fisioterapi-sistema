@@ -58,3 +58,8 @@ export async function fetchActiveUsers(): Promise<UserRoleDoc[]> {
 export async function setUserActive(uid: string, active: boolean): Promise<void> {
   await updateDoc(doc(db, 'userRoles', uid), { active });
 }
+
+/** Cambia el rol de un usuario. */
+export async function setUserRole(uid: string, role: string): Promise<void> {
+  await updateDoc(doc(db, 'userRoles', uid), { role });
+}

@@ -2,12 +2,14 @@ import React, { useState, useEffect } from 'react';
 import { UserSquare2, Plus, Trash2, Mail, Phone, Pencil, ShieldCheck, Users, WifiOff } from 'lucide-react';
 import { SkeletonHeader, SkeletonProfessionalCards } from '../../shared/components/SkeletonLoader';
 import { Professional, UserPermissions, DEFAULT_PERMISSIONS, ModulePermissions } from '../../types';
-import { db } from '../../lib/firebase';
-import { collection, onSnapshot, addDoc, deleteDoc, doc, updateDoc, getDocs } from 'firebase/firestore';
 import { useAuth } from '../../context/AuthContext';
 import { useToast } from '../../context/ToastContext';
 import useEscKey from '../../shared/hooks/useEscKey';
 import ConfirmModal from '../../shared/components/ConfirmModal';
+import {
+  subscribeToProfessionals, createProfessional, updateProfessional,
+  deleteProfessional, fetchActiveUsers, setUserActive, setUserRole,
+} from './professionalsService';
 
 interface UserRoleDoc {
   uid:    string;
@@ -72,13 +74,8 @@ const ProfessionalsManager: React.FC = () => {
   useEscKey(closeModal, isModalOpen && !isUsersModalOpen);
 
   useEffect(() => {
-    const unsub = onSnapshot(
-      collection(db, 'professionals'),
-      (snapshot) => {
-        setLoadError(null);
-        setIsLoading(false);
-        setProfessionals(snapshot.docs.map(d => ({ id: d.id, ...d.data() }) as Professional));
-      },
+    const unsub = subscribeToProfessionals(
+      (data) => { setLoadError(null); setIsLoading(false); setProfessionals(data); },
       (err) => {
         console.error('onSnapshot [professionals]:', err);
         setLoadError('No se pudieron cargar los profesionales. Verifica tu conexión e intenta de nuevo.');
@@ -110,16 +107,16 @@ const ProfessionalsManager: React.FC = () => {
     const payload = isTI ? { ...newProf, permissions: formPerms } : { ...newProf };
     try {
       if (editingId) {
-        await updateDoc(doc(db, 'professionals', editingId), payload);
+        await updateProfessional(editingId, payload);
       } else {
-        await addDoc(collection(db, 'professionals'), payload);
+        await createProfessional(payload as Omit<Professional, 'id'>);
       }
       setNewProf(EMPTY_FORM);
       setEditingId(null);
       setIsModalOpen(false);
       showToast();
     } catch (error) {
-      console.error("Error al guardar profesional:", error);
+      console.error('Error al guardar profesional:', error);
     }
   };
 
@@ -131,18 +128,12 @@ const ProfessionalsManager: React.FC = () => {
     if (!confirmDeleteId) return;
     const id = confirmDeleteId;
     setConfirmDeleteId(null);
-    await deleteDoc(doc(db, 'professionals', id));
+    await deleteProfessional(id);
     showToast('Profesional eliminado');
   };
 
   const openUsersModal = async () => {
-    const snap = await getDocs(collection(db, 'userRoles'));
-    const list: UserRoleDoc[] = snap.docs.map(d => ({
-      uid:    d.id,
-      email:  d.data().email  ?? '—',
-      role:   d.data().role   ?? 'sin rol',
-      active: d.data().active !== false,
-    }));
+    const list = await fetchActiveUsers();
     list.sort((a, b) => a.email.localeCompare(b.email));
     setActiveUsers(list);
     setIsUsersModalOpen(true);
@@ -152,9 +143,9 @@ const ProfessionalsManager: React.FC = () => {
     if (uid === user?.uid) return;
     setTogglingUid(uid);
     try {
-      await updateDoc(doc(db, 'userRoles', uid), { active: !currentActive });
+      await setUserActive(uid, !currentActive);
       setActiveUsers(prev =>
-        prev.map(u => u.uid === uid ? { ...u, active: !currentActive } : u)
+        prev.map(u => u.uid === uid ? { ...u, active: !currentActive } : u),
       );
       showToast(!currentActive ? 'Usuario activado' : 'Usuario desactivado');
     } finally {
@@ -432,7 +423,7 @@ const ProfessionalsManager: React.FC = () => {
                           value={u.role}
                           onChange={async e => {
                             const newRole = e.target.value;
-                            await updateDoc(doc(db, 'userRoles', u.uid), { role: newRole });
+                            await setUserRole(u.uid, newRole);
                             setActiveUsers(prev =>
                               prev.map(x => x.uid === u.uid ? { ...x, role: newRole } : x)
                             );

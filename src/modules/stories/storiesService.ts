@@ -1,7 +1,7 @@
 // Servicio de historias/testimonios — toda la lógica de Firestore en un solo lugar.
 import {
   collection, addDoc, doc, updateDoc, deleteDoc,
-  onSnapshot, Unsubscribe,
+  onSnapshot, getDocs, Unsubscribe,
 } from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { db, storage } from '../../lib/firebase';
@@ -19,36 +19,25 @@ export function subscribeToStories(
   );
 }
 
-/** Sube una imagen al Storage y devuelve su URL de descarga. */
-export async function uploadStoryImage(file: File): Promise<string> {
-  const storageRef = ref(storage, `stories/${Date.now()}_${file.name}`);
-  await uploadBytes(storageRef, file);
+/**
+ * Sube un blob (imagen ya comprimida en el componente) al Storage
+ * y devuelve su URL de descarga.
+ */
+export async function uploadStoryBlob(blob: Blob, fileName: string): Promise<string> {
+  const storageRef = ref(storage, `stories/${Date.now()}_${fileName}`);
+  await uploadBytes(storageRef, blob, { contentType: 'image/jpeg' });
   return getDownloadURL(storageRef);
 }
 
-/** Crea una historia nueva, con imagen opcional. */
-export async function createStory(
-  data: Omit<Story, 'id'>,
-  imageFile?: File | null,
-): Promise<void> {
-  const imageUrl = imageFile ? await uploadStoryImage(imageFile) : undefined;
-  await addDoc(collection(db, 'stories'), {
-    ...data,
-    ...(imageUrl ? { imageUrl } : {}),
-  });
+/** Crea una historia nueva en Firestore. */
+export async function saveStory(data: Omit<Story, 'id'>): Promise<void> {
+  await addDoc(collection(db, 'stories'), data);
 }
 
-/** Actualiza una historia existente, con imagen opcional. */
-export async function updateStory(
-  id: string,
-  data: Partial<Omit<Story, 'id'>>,
-  imageFile?: File | null,
-): Promise<void> {
-  const imageUrl = imageFile ? await uploadStoryImage(imageFile) : undefined;
-  await updateDoc(doc(db, 'stories', id), {
-    ...data,
-    ...(imageUrl ? { imageUrl } : {}),
-  });
+/** Obtiene todas las historias (lectura única). */
+export async function fetchStories(): Promise<Story[]> {
+  const snap = await getDocs(collection(db, 'stories'));
+  return snap.docs.map(d => ({ id: d.id, ...d.data() }) as Story);
 }
 
 /** Elimina una historia. */

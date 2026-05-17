@@ -1,18 +1,20 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { CalendarDays, Plus, Trash2, Clock, UserSquare2, AlertTriangle, WifiOff, ChevronLeft, ChevronRight } from 'lucide-react';
 import { Session, Patient, Professional } from '../../types';
-import { db } from '../../lib/firebase';
-import {
-  collection, onSnapshot, addDoc, deleteDoc, doc,
-  updateDoc, getDocs, query, where, getDoc,
-} from 'firebase/firestore';
 import { useAuth } from '../../context/AuthContext';
 import { useToast } from '../../context/ToastContext';
 import useEscKey from '../../shared/hooks/useEscKey';
 import ConfirmModal from '../../shared/components/ConfirmModal';
 import { isToday, shouldAutoCreateSale, shouldWarnOnLeave, statusBadgeClass } from '../../shared/utils/session';
-import { writeAuditLog } from '../../shared/utils/auditLogger';
 import { SkeletonHeader, SkeletonSessionCards } from '../../shared/components/SkeletonLoader';
+import {
+  subscribeToSessions, fetchServicePrices, saleExistsForSession,
+  createAutoSale, updateSessionStatus, createSession, deleteSession,
+} from './sessionsService';
+import { subscribeToPatients } from '../patients/patientsService';
+import { subscribeToProfessionals } from '../professionals/professionalsService';
+import { onSnapshot, collection, getDocs, query, where } from 'firebase/firestore';
+import { db } from '../../lib/firebase';
 
 // ─── Tipos locales ─────────────────────────────────────────────────────────────
 
@@ -86,26 +88,40 @@ const SessionsManager: React.FC = () => {
       setLoadError('No se pudieron cargar los datos. Verifica tu conexión e intenta de nuevo.');
     };
 
-    const unsubSessions      = onSnapshot(collection(db, 'sessions'),      snap => { setLoadError(null); setIsLoading(false); setSessions(snap.docs.map(d => ({ id: d.id, ...d.data() } as Session))); },      onErr('sessions'));
-    const unsubPatients      = onSnapshot(collection(db, 'patients'),      snap => setPatients(snap.docs.map(d => ({ id: d.id, ...d.data() } as Patient))),      onErr('patients'));
-    const unsubProfessionals = onSnapshot(collection(db, 'professionals'), snap => setProfessionals(snap.docs.map(d => ({ id: d.id, ...d.data() } as Professional))), onErr('professionals'));
-    const unsubTasks         = onSnapshot(collection(db, 'therapyTasks'),  snap => setTherapyTasks(snap.docs.map(d => ({ id: d.id, ...d.data() } as TherapyTask))),  onErr('therapyTasks'));
+    const unsubSessions      = subscribeToSessions(
+      (data) => { setLoadError(null); setIsLoading(false); setSessions(data); },
+      onErr('sessions'),
+    );
+    const unsubPatients      = subscribeToPatients(
+      (data) => setPatients(data),
+      onErr('patients'),
+    );
+    const unsubProfessionals = subscribeToProfessionals(
+      (data) => setProfessionals(data),
+      onErr('professionals'),
+    );
+    // therapyTasks no tiene servicio propio aún — onSnapshot directo provisional
+    const unsubTasks = onSnapshot(
+      collection(db, 'therapyTasks'),
+      (snap) => setTherapyTasks(snap.docs.map(d => ({ id: d.id, ...d.data() }) as TherapyTask)),
+      onErr('therapyTasks'),
+    );
 
     return () => { unsubSessions(); unsubPatients(); unsubProfessionals(); unsubTasks(); };
   }, []);
 
   // Precios de servicios
   useEffect(() => {
-    getDoc(doc(db, 'servicePrices', 'default'))
-      .then(snap => { if (snap.exists()) setServicePrices(snap.data() as Record<string, number>); });
+    fetchServicePrices().then(setServicePrices);
   }, []);
 
   // Nombre del profesional logueado
   useEffect(() => {
     if (!user?.email) return;
-    getDocs(query(collection(db, 'professionals'), where('email', '==', user.email)))
-      .then(snap => setStaffName(snap.empty ? (user.email ?? '') : ((snap.docs[0].data() as Pick<Professional, 'name'>).name || user.email || '')))
-      .catch(() => setStaffName(user?.email ?? ''));
+    const email = user.email;
+    getDocs(query(collection(db, 'professionals'), where('email', '==', email)))
+      .then(snap => setStaffName(snap.empty ? email : ((snap.docs[0].data() as Pick<Professional, 'name'>).name || email)))
+      .catch(() => setStaffName(email));
   }, [user?.email]);
 
   // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -113,34 +129,7 @@ const SessionsManager: React.FC = () => {
   const getProfName    = (id: string) => professionals.find(p => p.id === id)?.name || 'Especialista no encontrado';
 
   /** Verifica si ya existe una venta ligada a esta sesión */
-  const checkSaleExists = async (sessionId: string): Promise<boolean> => {
-    const snap = await getDocs(
-      query(collection(db, 'sales'), where('sessionId', '==', sessionId))
-    );
-    return !snap.empty;
-  };
-
-  /** Crea la venta automática al marcar una sesión como Pagada */
-  const autoCreateSale = async (session: Session) => {
-    const patient  = patients.find(p => p.id === session.patientId);
-    const price    = servicePrices[session.therapyType] ?? 0;
-    await addDoc(collection(db, 'sales'), {
-      type:           'service',
-      sessionId:      session.id,
-      patientId:      session.patientId,
-      patientName:    patient?.name || 'Paciente',
-      itemName:       session.therapyType,
-      unitPrice:      price,
-      qty:            1,
-      total:          price,
-      date:           session.date,
-      validOnlyToday: true,
-      notes:          'Venta registrada automáticamente al marcar como Pagada.',
-      createdAt:      new Date().toISOString(),
-      createdByUid:   user?.uid ?? '',
-      createdByName:  staffName,
-    });
-  };
+  const checkSaleExists = (sessionId: string) => saleExistsForSession(sessionId);
 
   // ── Cambio de estado ─────────────────────────────────────────────────────────
   const updateStatus = async (session: Session, newStatus: Session['status']) => {
@@ -161,16 +150,13 @@ const SessionsManager: React.FC = () => {
       if (shouldAutoCreateSale(currentStatus, newStatus)) {
         const alreadyHasSale = await checkSaleExists(session.id);
         if (!alreadyHasSale) {
-          await autoCreateSale(session);
+          await createAutoSale({ session, patients, servicePrices, user, staffName });
           showToast('Venta registrada automáticamente en Área Reservada.');
         }
       }
 
-      await updateDoc(doc(db, 'sessions', session.id), { status: newStatus });
-      if (user) void writeAuditLog(user, 'update_session_status', session.id,
-        patients.find(p => p.id === session.patientId)?.name,
-        { oldStatus: currentStatus, newStatus },
-      );
+      const patientName = patients.find(p => p.id === session.patientId)?.name;
+      await updateSessionStatus(session.id, newStatus, user, patientName, currentStatus);
       showToast();
     } catch (error) {
       console.error('Error al actualizar estado:', error);
@@ -184,11 +170,8 @@ const SessionsManager: React.FC = () => {
     const { session, newStatus } = pendingChange;
     setPendingChange(null);
     try {
-      await updateDoc(doc(db, 'sessions', session.id), { status: newStatus });
-      if (user) void writeAuditLog(user, 'update_session_status', session.id,
-        patients.find(p => p.id === session.patientId)?.name,
-        { oldStatus: session.status, newStatus },
-      );
+      const patientName = patients.find(p => p.id === session.patientId)?.name;
+      await updateSessionStatus(session.id, newStatus, user, patientName, session.status);
       showToast('Estado actualizado. La venta permanece registrada en Área Reservada.');
     } catch {
       showToast('No se pudo actualizar el estado.', 'error');
@@ -206,14 +189,8 @@ const SessionsManager: React.FC = () => {
     if (!newSession.time) { setFormError('Por favor selecciona una hora.'); return; }
     setFormError(null);
     try {
-      const sessionRef = await addDoc(collection(db, 'sessions'), {
-        ...newSession,
-        yearMonth: newSession.date.substring(0, 7),
-      });
-      if (user) void writeAuditLog(user, 'create_session', sessionRef.id,
-        patients.find(p => p.id === newSession.patientId)?.name,
-        { date: newSession.date, therapyType: newSession.therapyType },
-      );
+      const patientName = patients.find(p => p.id === newSession.patientId)?.name;
+      await createSession(newSession, user, patientName);
       setIsModalOpen(false);
       setNewSession({ patientId: '', professionalId: '', date: '', time: '', therapyType: '', status: 'Programada', notes: '' });
       showToast('Cita agendada');
@@ -229,11 +206,8 @@ const SessionsManager: React.FC = () => {
     const id = confirmDeleteId;
     const session = sessions.find(s => s.id === id);
     setConfirmDeleteId(null);
-    await deleteDoc(doc(db, 'sessions', id));
-    if (user) void writeAuditLog(user, 'delete_session', id,
-      patients.find(p => p.id === session?.patientId)?.name,
-      { date: session?.date, therapyType: session?.therapyType },
-    );
+    const patientName = patients.find(p => p.id === session?.patientId)?.name;
+    await deleteSession(id, user, patientName, { date: session?.date, therapyType: session?.therapyType });
     showToast('Cita eliminada');
   };
 
