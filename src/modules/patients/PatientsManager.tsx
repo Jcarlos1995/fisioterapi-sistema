@@ -1,14 +1,14 @@
 import React, { useState, useEffect } from 'react';
 import { Plus, Search, Edit2, Trash2, X, WifiOff } from 'lucide-react';
 import { Patient, Professional } from '../../types';
-import { db } from '../../lib/firebase';
-import { collection, addDoc, doc, updateDoc, deleteDoc, onSnapshot, query, where, getDocs } from 'firebase/firestore';
 import { useAuth } from '../../context/AuthContext';
 import { useToast } from '../../context/ToastContext';
 import useEscKey from '../../shared/hooks/useEscKey';
 import { validateBirthDate } from '../../shared/utils/validation';
-import { writeAuditLog } from '../../shared/utils/auditLogger';
+import { writeAuditLog } from '../../shared/utils/auditLogger'; // usado en handleEditOpen
 import ConfirmModal from '../../shared/components/ConfirmModal';
+import { subscribeToPatients, createPatient, updatePatient, deletePatient } from './patientsService';
+import { subscribeToProfessionals } from '../professionals/professionalsService';
 import { SkeletonHeader, SkeletonSearchBar, SkeletonTableRows } from '../../shared/components/SkeletonLoader';
 
 const PatientsManager: React.FC = () => {
@@ -30,28 +30,16 @@ const PatientsManager: React.FC = () => {
       setLoadError('No se pudieron cargar los datos. Verifica tu conexión e intenta de nuevo.');
     };
 
-    const unsubPatients = onSnapshot(
-      collection(db, "patients"),
-      (snapshot) => {
-        setLoadError(null);
-        setIsLoading(false);
-        setPatients(snapshot.docs.map(d => ({ ...d.data(), id: d.id }) as Patient));
-      },
+    const unsubPatients = subscribeToPatients(
+      (data) => { setLoadError(null); setIsLoading(false); setPatients(data); },
+      onErr,
+    );
+    const unsubProfs = subscribeToProfessionals(
+      (data) => setProfessionals(data),
       onErr,
     );
 
-    const unsubProfs = onSnapshot(
-      collection(db, "professionals"),
-      (snapshot) => {
-        setProfessionals(snapshot.docs.map(d => ({ id: d.id, ...d.data() }) as Professional));
-      },
-      onErr,
-    );
-
-    return () => {
-      unsubPatients();
-      unsubProfs();
-    };
+    return () => { unsubPatients(); unsubProfs(); };
   }, []);
 
   const term = searchTerm.toLowerCase();
@@ -72,35 +60,9 @@ const PatientsManager: React.FC = () => {
       }
 
       if (currentPatient.id) {
-        // 1. Actualizar los datos del paciente sin enviar el campo id
-        const { id: _id, createdAt: _createdAt, ...patientData } = currentPatient as Patient;
-        const patientRef = doc(db, "patients", currentPatient.id);
-        await updateDoc(patientRef, patientData);
-        if (user) void writeAuditLog(user, 'update_patient', currentPatient.id, currentPatient.name);
-
-        // 2. ACTUALIZACIÓN EN CASCADA: Actualizar profesional en la colección 'sessions'
-        if (currentPatient.professionalId) {
-          const sessionsRef = collection(db, "sessions");
-          const q = query(sessionsRef, where("patientId", "==", currentPatient.id));
-          const querySnapshot = await getDocs(q);
-
-          // Creamos una promesa por cada sesión encontrada para actualizar el profesional
-          const updatePromises = querySnapshot.docs.map(sessionDoc =>
-            updateDoc(doc(db, "sessions", sessionDoc.id), {
-              professionalId: currentPatient.professionalId
-            })
-          );
-
-          await Promise.all(updatePromises);
-          console.log(`Sincronización completa: ${updatePromises.length} sesiones actualizadas.`);
-        }
+        await updatePatient(currentPatient as Patient, user);
       } else {
-        // Crear nuevo paciente
-        const newRef = await addDoc(collection(db, "patients"), {
-          ...currentPatient,
-          createdAt: new Date().toISOString()
-        });
-        if (user) void writeAuditLog(user, 'create_patient', newRef.id, currentPatient.name);
+        await createPatient(currentPatient as Omit<Patient, 'id'>, user);
       }
       setIsModalOpen(false);
       setCurrentPatient({});
@@ -119,8 +81,7 @@ const PatientsManager: React.FC = () => {
     setConfirmDeleteId(null);
     try {
       const patientName = patients.find(p => p.id === id)?.name;
-      await deleteDoc(doc(db, "patients", id));
-      if (user) void writeAuditLog(user, 'delete_patient', id, patientName);
+      await deletePatient(id, patientName, user);
       showToast('Paciente eliminado');
     } catch (error) {
       console.error("Error al eliminar:", error);
