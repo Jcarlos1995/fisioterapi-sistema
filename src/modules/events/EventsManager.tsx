@@ -41,18 +41,10 @@ const EventsManager: React.FC = () => {
       (data) => {
         if (data) {
           setCurrent(data);
-          // Solo pre-rellena el form si no hay un evento activo (para no
-          // interrumpir una edición en curso)
-          if (!data.active) {
-            setTitleInput(data.title || '');
-            setUrlInput(data.facebookUrl || '');
-            setRedirectMode(data.mode === 'redirect');
-          }
+          // El formulario siempre arranca vacío — no pre-rellenamos con datos
+          // del evento anterior para evitar confusión entre sesiones.
         } else {
           setCurrent(null);
-          setTitleInput('');
-          setUrlInput('');
-          setRedirectMode(false);
         }
         setLoadingDoc(false);
       },
