@@ -13,7 +13,7 @@ import {
 } from './sessionsService';
 import { subscribeToPatients } from '../patients/patientsService';
 import { subscribeToProfessionals, fetchProfessionalByEmail } from '../professionals/professionalsService';
-import { subscribeToTherapyTasks } from '../daily-therapy/dailyTherapyService';
+import { subscribeToTherapyTasks, TherapyTask } from '../daily-therapy/dailyTherapyService';
 
 // ─── Tipos locales ─────────────────────────────────────────────────────────────
 
@@ -21,12 +21,6 @@ interface PendingChange {
   session: Session;
   newStatus: Session['status'];
   hasSale: boolean;
-}
-
-interface TherapyTask {
-  id: string;
-  name: string;
-  active: boolean;
 }
 
 // ─── Constantes ───────────────────────────────────────────────────────────────
