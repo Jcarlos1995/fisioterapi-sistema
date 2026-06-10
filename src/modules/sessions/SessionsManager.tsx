@@ -13,7 +13,7 @@ import {
 } from './sessionsService';
 import { subscribeToPatients } from '../patients/patientsService';
 import { subscribeToProfessionals, fetchProfessionalByEmail } from '../professionals/professionalsService';
-import { subscribeToTherapyTasks, TherapyTask } from '../daily-therapy/dailyTherapyService';
+import { THERAPY_TYPES } from '../../constants';
 
 // ─── Tipos locales ─────────────────────────────────────────────────────────────
 
@@ -47,7 +47,6 @@ const SessionsManager: React.FC = () => {
   const [sessions,      setSessions]      = useState<Session[]>([]);
   const [patients,      setPatients]      = useState<Patient[]>([]);
   const [professionals, setProfessionals] = useState<Professional[]>([]);
-  const [therapyTasks,  setTherapyTasks]  = useState<TherapyTask[]>([]);
   const [servicePrices, setServicePrices] = useState<Record<string, number>>({});
   const [staffName,     setStaffName]     = useState('');
 
@@ -93,12 +92,7 @@ const SessionsManager: React.FC = () => {
       (data) => setProfessionals(data),
       onErr('professionals'),
     );
-    const unsubTasks = subscribeToTherapyTasks(
-      (data) => setTherapyTasks(data),
-      onErr('therapyTasks'),
-    );
-
-    return () => { unsubSessions(); unsubPatients(); unsubProfessionals(); unsubTasks(); };
+    return () => { unsubSessions(); unsubPatients(); unsubProfessionals(); };
   }, []);
 
   // Precios de servicios
@@ -503,8 +497,8 @@ const SessionsManager: React.FC = () => {
                   required
                 >
                   <option value="">Seleccionar Terapia</option>
-                  {therapyTasks.filter(t => t.active).map(t => (
-                    <option key={t.id} value={t.name}>{t.name}</option>
+                  {THERAPY_TYPES.map(t => (
+                    <option key={t} value={t}>{t}</option>
                   ))}
                 </select>
               </div>

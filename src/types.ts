@@ -72,7 +72,12 @@ export interface Session {
 
 export type SessionStatus = 'Programada' | 'Confirmada' | 'Efectuada' | 'Pagada' | 'Cancelada';
 
-export type TherapyType = 'Fisioterapia' | 'Quiropraxia' | 'Masajes' | 'Terapia de Temporada' | 'Medicina General' | 'Otros';
+export type TherapyType =
+  | 'Fisioterapia'
+  | 'Quiropraxia'
+  | 'Rehabilitación Post-Operatoria'
+  | 'Masaje Terapéutico'
+  | 'Terapia Deportiva';
 
 export interface Product {
   id: string;

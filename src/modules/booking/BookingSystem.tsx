@@ -8,6 +8,7 @@ import { getFunctions, httpsCallable } from 'firebase/functions';
 import { Activity, Clock, User, Phone, CheckCircle, ArrowLeft, X, Lock, AlertCircle } from 'lucide-react';
 import { BookedSlot, slotKey, buildOccupancyMap, isSlotAllowed, occupancyColor, mapBookingError } from '../../shared/utils/booking';
 import { LANDING_URL } from '../../config';
+import { THERAPY_TYPES } from '../../constants';
 
 
 const BookingSystem: React.FC = () => {
@@ -27,13 +28,8 @@ const BookingSystem: React.FC = () => {
     therapyType: 'Fisioterapia'
   });
 
-  const therapyOptions = [
-    "Fisioterapia",
-    "Quiropraxia",
-    "Rehabilitación Post-Operatoria",
-    "Masaje Terapéutico",
-    "Terapia Deportiva"
-  ];
+  // Catálogo único de servicios — compartido con Sesiones y Área Reservada
+  const therapyOptions = THERAPY_TYPES;
 
   // ─── Mapa de ocupación: slot ISO normalizado → Set de servicios tomados ──────
   const occupancyMap = useMemo(() => buildOccupancyMap(bookedSlots), [bookedSlots]);

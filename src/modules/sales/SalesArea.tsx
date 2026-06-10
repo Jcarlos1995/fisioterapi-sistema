@@ -12,10 +12,10 @@ import {
   subscribeToSalesByMonth, subscribeToPacks, fetchMonthTotal,
   fetchServicePrices, saveServicePrices, deleteSale, createSale, Sale, SalePayload,
 } from './salesService';
-import { subscribeToTherapyTasks, TherapyTask } from '../daily-therapy/dailyTherapyService';
 import { subscribeToPatients } from '../patients/patientsService';
 import { subscribeToProducts } from '../products/productsService';
 import { fetchProfessionalByEmail } from '../professionals/professionalsService';
+import { THERAPY_TYPES } from '../../constants';
 
 interface PortalProduct {
   id: string;
@@ -123,20 +123,10 @@ const SalesArea: React.FC = () => {
     fetchServicePrices().then(prices => setServicePrices(prices));
   }, []);
 
-  // ── Tareas globales (servicios del catálogo) ─────────────────────────────────
   const onSnapErr = (label: string) => (err: Error) => {
     console.error(`onSnapshot [${label}]:`, err);
     setLoadError('No se pudieron cargar los datos. Verifica tu conexión e intenta de nuevo.');
   };
-
-  const [therapyTasks, setTherapyTasks] = useState<TherapyTask[]>([]);
-  useEffect(() => {
-    return subscribeToTherapyTasks(
-      (data) => setTherapyTasks(data),
-      onSnapErr('therapyTasks'),
-    );
-  }, []);
-  const activeTasks = therapyTasks.filter(t => t.active);
 
   // ── Productos ────────────────────────────────────────────────────────────────
   const [products, setProducts] = useState<PortalProduct[]>([]);
@@ -608,7 +598,7 @@ const SalesArea: React.FC = () => {
       {showPrices && (
         <PricesModal
           prices={servicePrices}
-          tasks={activeTasks}
+          services={THERAPY_TYPES}
           onClose={() => setShowPrices(false)}
           onSave={async (updated) => {
             try {
@@ -628,7 +618,7 @@ const SalesArea: React.FC = () => {
         <RegisterSaleModal
           patients={patients}
           products={products}
-          therapyTasks={activeTasks}
+          services={THERAPY_TYPES}
           servicePrices={servicePrices}
           onClose={() => setShowRegister(false)}
           onSubmit={async (payload) => {
@@ -650,15 +640,15 @@ const SalesArea: React.FC = () => {
 
 interface PricesModalProps {
   prices: Record<string, number>;
-  tasks: TherapyTask[];
+  services: readonly string[];
   onClose: () => void;
   onSave: (updated: Record<string, number>) => Promise<void>;
 }
 
-const PricesModal: React.FC<PricesModalProps> = ({ prices, tasks, onClose, onSave }) => {
+const PricesModal: React.FC<PricesModalProps> = ({ prices, services, onClose, onSave }) => {
   const [local, setLocal] = useState<Record<string, number>>(() => {
     const init: Record<string, number> = {};
-    tasks.forEach(t => { init[t.name] = prices[t.name] ?? 0; });
+    services.forEach(s => { init[s] = prices[s] ?? 0; });
     return init;
   });
   const [saving, setSaving] = useState(false);
@@ -683,28 +673,22 @@ const PricesModal: React.FC<PricesModalProps> = ({ prices, tasks, onClose, onSav
         </div>
 
         <div className="px-6 py-4 space-y-3 max-h-80 overflow-y-auto">
-          {tasks.length === 0 ? (
-            <p className="text-sm text-slate-400 text-center py-4">
-              No hay tareas en el catálogo. Agrégalas desde "Gestionar tareas".
-            </p>
-          ) : (
-            tasks.map(task => (
-              <div key={task.id} className="flex items-center gap-3">
-                <span className="text-sm text-slate-700 flex-1 font-medium">{task.name}</span>
-                <div className="relative w-28">
-                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm">S/</span>
-                  <input
-                    type="number"
-                    min={0}
-                    step={0.5}
-                    value={local[task.name] ?? 0}
-                    onChange={e => setLocal(p => ({ ...p, [task.name]: Number(e.target.value) }))}
-                    className="w-full pl-8 pr-3 py-2 rounded-xl border border-slate-200 focus:border-blue-500 focus:ring-2 focus:ring-blue-100 outline-none text-sm font-semibold text-slate-800"
-                  />
-                </div>
+          {services.map(service => (
+            <div key={service} className="flex items-center gap-3">
+              <span className="text-sm text-slate-700 flex-1 font-medium">{service}</span>
+              <div className="relative w-28">
+                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm">S/</span>
+                <input
+                  type="number"
+                  min={0}
+                  step={0.5}
+                  value={local[service] ?? 0}
+                  onChange={e => setLocal(p => ({ ...p, [service]: Number(e.target.value) }))}
+                  className="w-full pl-8 pr-3 py-2 rounded-xl border border-slate-200 focus:border-blue-500 focus:ring-2 focus:ring-blue-100 outline-none text-sm font-semibold text-slate-800"
+                />
               </div>
-            ))
-          )}
+            </div>
+          ))}
         </div>
 
         <div className="px-6 py-4 border-t border-slate-100 flex justify-end gap-2">
@@ -732,14 +716,14 @@ interface SalePatient { id: string; name: string; dni: string; }
 interface RegisterSaleModalProps {
   patients: SalePatient[];
   products: PortalProduct[];
-  therapyTasks: TherapyTask[];
+  services: readonly string[];
   servicePrices: Record<string, number>;
   onClose: () => void;
   onSubmit: (payload: SalePayload) => Promise<void>;
 }
 
 const RegisterSaleModal: React.FC<RegisterSaleModalProps> = ({
-  patients, products, therapyTasks, servicePrices, onClose, onSubmit,
+  patients, products, services, servicePrices, onClose, onSubmit,
 }) => {
   const [type, setType]           = useState<'service' | 'product'>('service');
   const [patientSearch, setPatientSearch] = useState('');
@@ -894,30 +878,24 @@ const RegisterSaleModal: React.FC<RegisterSaleModalProps> = ({
           {type === 'service' ? (
             <div>
               <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2">Servicio</p>
-              {therapyTasks.length === 0 ? (
-                <p className="text-sm text-slate-400 text-center py-4 bg-slate-50 rounded-xl">
-                  No hay tareas en el catálogo. Agrégalas desde "Gestionar tareas".
-                </p>
-              ) : (
-                <div className="grid grid-cols-2 gap-2 max-h-44 overflow-y-auto pr-0.5">
-                  {therapyTasks.map(task => (
-                    <button
-                      key={task.id}
-                      onClick={() => handleSelectService(task.name)}
-                      className={`text-left px-3 py-2.5 rounded-xl border text-sm font-medium transition-all ${
-                        itemName === task.name
-                          ? 'border-violet-400 bg-violet-50 text-violet-700'
-                          : 'border-slate-200 text-slate-600 hover:border-slate-300 hover:bg-slate-50'
-                      }`}
-                    >
-                      <span className="block truncate">{task.name}</span>
-                      {(servicePrices[task.name] ?? 0) > 0 && (
-                        <span className="text-xs text-slate-400 font-semibold">S/ {servicePrices[task.name].toFixed(2)}</span>
-                      )}
-                    </button>
-                  ))}
-                </div>
-              )}
+              <div className="grid grid-cols-2 gap-2 max-h-44 overflow-y-auto pr-0.5">
+                {services.map(service => (
+                  <button
+                    key={service}
+                    onClick={() => handleSelectService(service)}
+                    className={`text-left px-3 py-2.5 rounded-xl border text-sm font-medium transition-all ${
+                      itemName === service
+                        ? 'border-violet-400 bg-violet-50 text-violet-700'
+                        : 'border-slate-200 text-slate-600 hover:border-slate-300 hover:bg-slate-50'
+                    }`}
+                  >
+                    <span className="block truncate">{service}</span>
+                    {(servicePrices[service] ?? 0) > 0 && (
+                      <span className="text-xs text-slate-400 font-semibold">S/ {servicePrices[service].toFixed(2)}</span>
+                    )}
+                  </button>
+                ))}
+              </div>
             </div>
           ) : (
             <div>
