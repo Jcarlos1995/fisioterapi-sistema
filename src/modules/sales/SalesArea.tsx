@@ -1,13 +1,17 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import {
-  Lock, Plus, Settings2, Wrench, Package,
-  TrendingUp, Search, X, ChevronDown, BadgeDollarSign, User, CalendarRange, Trash2, WifiOff,
+  Lock, Plus, Settings2, Wrench, Package, TrendingUp, TrendingDown, Search, X,
+  BadgeDollarSign, User, CalendarRange, Trash2, WifiOff, AlertTriangle, Calendar,
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { useToast } from '../../context/ToastContext';
 import useEscKey from '../../shared/hooks/useEscKey';
+import ConfirmModal from '../../shared/components/ConfirmModal';
 import { Patient } from '../../types';
-import { subscribeToSales, fetchServicePrices, saveServicePrices, deleteSale, createSale, Sale, SalePayload } from './salesService';
+import {
+  subscribeToSalesByMonth, subscribeToPacks, fetchMonthTotal,
+  fetchServicePrices, saveServicePrices, deleteSale, createSale, Sale, SalePayload,
+} from './salesService';
 import { subscribeToTherapyTasks, TherapyTask } from '../daily-therapy/dailyTherapyService';
 import { subscribeToPatients } from '../patients/patientsService';
 import { subscribeToProducts } from '../products/productsService';
@@ -46,6 +50,54 @@ function formatMonthLabel(monthKey: string): string {
 
 function currency(n: number): string {
   return `S/ ${n.toFixed(2)}`;
+}
+
+/** Mes anterior a un monthKey YYYY-MM. */
+function prevMonthKey(monthKey: string): string {
+  const [y, m] = monthKey.split('-').map(Number);
+  const d = new Date(y, m - 2, 1);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+}
+
+/** Encabezado de día: "Miércoles 10 de junio" (con "Hoy · " si corresponde). */
+function formatDayHeader(dateStr: string): string {
+  try {
+    const label = new Date(`${dateStr}T12:00:00-05:00`).toLocaleDateString('es-PE', {
+      weekday: 'long', day: 'numeric', month: 'long',
+    });
+    const capitalized = label.charAt(0).toUpperCase() + label.slice(1);
+    return dateStr === TODAY ? `Hoy · ${label}` : capitalized;
+  } catch { return dateStr; }
+}
+
+/** Fecha corta para rangos de packs: "1 jun". */
+function formatShortDate(dateStr: string): string {
+  try {
+    return new Date(`${dateStr}T12:00:00-05:00`).toLocaleDateString('es-PE', {
+      day: 'numeric', month: 'short',
+    });
+  } catch { return dateStr; }
+}
+
+/** Hora local de Lima desde un ISO string: "10:30 a. m.". */
+function formatTime(iso?: string): string {
+  if (!iso) return '';
+  try {
+    return new Date(iso).toLocaleTimeString('es-PE', {
+      hour: '2-digit', minute: '2-digit', timeZone: 'America/Lima',
+    });
+  } catch { return ''; }
+}
+
+/** Días que faltan (inclusive) hasta una fecha YYYY-MM-DD en horario de Lima. */
+function daysUntil(dateStr: string): number {
+  const end = new Date(`${dateStr}T23:59:59-05:00`).getTime();
+  return Math.max(0, Math.ceil((end - Date.now()) / 86_400_000));
+}
+
+/** Iniciales del paciente para el avatar de la pestaña de packs. */
+function initials(name: string): string {
+  return name.split(' ').filter(Boolean).slice(0, 2).map(w => w[0]).join('').toUpperCase();
 }
 
 // ─── Componente principal ─────────────────────────────────────────────────────
@@ -107,53 +159,104 @@ const SalesArea: React.FC = () => {
     );
   }, []);
 
-  // ── Ventas ───────────────────────────────────────────────────────────────────
+  // ── Ventas del mes seleccionado (query filtrada en Firestore) ───────────────
+  const [filterMonth, setFilterMonth] = useState(currentMonthKey());
   const [sales, setSales] = useState<Sale[]>([]);
   useEffect(() => {
-    return subscribeToSales(
-      (data) => setSales(data),
+    return subscribeToSalesByMonth(
+      filterMonth,
+      (data) => { setLoadError(null); setSales(data); },
       onSnapErr('sales'),
     );
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filterMonth]);
+
+  // ── Total del mes anterior (para la comparación del KPI) ────────────────────
+  const [prevTotal, setPrevTotal] = useState<number | null>(null);
+  useEffect(() => {
+    setPrevTotal(null);
+    fetchMonthTotal(prevMonthKey(filterMonth))
+      .then(setPrevTotal)
+      .catch(() => setPrevTotal(null));
+  }, [filterMonth]);
+
+  // ── Packs (ventas con rango de vigencia) ────────────────────────────────────
+  const [packs, setPacks] = useState<Sale[]>([]);
+  useEffect(() => {
+    return subscribeToPacks(setPacks, onSnapErr('packs'));
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // ── Filtros ──────────────────────────────────────────────────────────────────
-  const [filterType, setFilterType] = useState<'all' | 'service' | 'product'>('all');
-  const [filterMonth, setFilterMonth] = useState(currentMonthKey());
+  const activePacks = useMemo(() =>
+    packs
+      .filter(p => p.validFrom && p.validTo && p.validFrom <= TODAY && p.validTo >= TODAY)
+      .sort((a, b) => (a.validTo! < b.validTo! ? -1 : 1)),
+    [packs]);
+
+  const expiringPacks = useMemo(
+    () => activePacks.filter(p => daysUntil(p.validTo!) <= 7),
+    [activePacks],
+  );
+
+  // ── Filtros y pestañas ───────────────────────────────────────────────────────
+  const [activeTab, setActiveTab]       = useState<'sales' | 'packs'>('sales');
+  const [filterType, setFilterType]     = useState<'all' | 'service' | 'product'>('all');
+  const [patientSearch, setPatientSearch] = useState('');
 
   const filteredSales = useMemo(() => {
+    const q = patientSearch.trim().toLowerCase();
     return sales.filter(s => {
-      const monthMatch = s.date.startsWith(filterMonth);
-      const typeMatch  = filterType === 'all' || s.type === filterType;
-      return monthMatch && typeMatch;
+      const typeMatch   = filterType === 'all' || s.type === filterType;
+      const searchMatch = !q || s.patientName.toLowerCase().includes(q);
+      return typeMatch && searchMatch;
     });
-  }, [sales, filterMonth, filterType]);
+  }, [sales, filterType, patientSearch]);
+
+  // Ventas agrupadas por día — la query ya viene ordenada por fecha desc
+  const salesByDay = useMemo(() => {
+    const groups = new Map<string, Sale[]>();
+    filteredSales.forEach(s => {
+      const arr = groups.get(s.date) ?? [];
+      arr.push(s);
+      groups.set(s.date, arr);
+    });
+    return Array.from(groups.entries());
+  }, [filteredSales]);
 
   // ── KPIs ─────────────────────────────────────────────────────────────────────
   const kpis = useMemo(() => {
-    const monthSales = sales.filter(s => s.date.startsWith(filterMonth));
+    const services = sales.filter(s => s.type === 'service');
+    const products = sales.filter(s => s.type === 'product');
     return {
-      total:    monthSales.reduce((sum, s) => sum + s.total, 0),
-      services: monthSales.filter(s => s.type === 'service').length,
-      products: monthSales.filter(s => s.type === 'product').length,
-      count:    monthSales.length,
+      total:           sales.reduce((sum, s) => sum + s.total, 0),
+      serviceRevenue:  services.reduce((sum, s) => sum + s.total, 0),
+      productRevenue:  products.reduce((sum, s) => sum + s.total, 0),
+      serviceCount:    services.length,
+      productCount:    products.length,
     };
-  }, [sales, filterMonth]);
+  }, [sales]);
+
+  // Variación % contra el mes anterior (null = sin datos para comparar)
+  const monthDelta = useMemo(() => {
+    if (prevTotal === null || prevTotal === 0) return null;
+    return ((kpis.total - prevTotal) / prevTotal) * 100;
+  }, [kpis.total, prevTotal]);
 
   // ── Modales ──────────────────────────────────────────────────────────────────
   const [showRegister, setShowRegister] = useState(false);
   const [showPrices, setShowPrices]     = useState(false);
 
   // ── Eliminar venta (solo TI) ─────────────────────────────────────────────────
-  const [deletingId, setDeletingId] = useState<string | null>(null);
-  const handleDeleteSale = async (id: string) => {
-    if (!window.confirm('¿Eliminar esta venta? Esta acción no se puede deshacer.')) return;
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+  const handleConfirmDelete = async () => {
+    if (!confirmDeleteId) return;
+    const id = confirmDeleteId;
+    setConfirmDeleteId(null);
     try {
       await deleteSale(id);
       showToast('Venta eliminada.');
     } catch {
       showToast('No se pudo eliminar la venta.', 'error');
-    } finally {
-      setDeletingId(null);
     }
   };
 
@@ -213,127 +316,293 @@ const SalesArea: React.FC = () => {
         </div>
       </div>
 
-      {/* KPIs */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-        {[
-          { label: 'Total del mes', value: currency(kpis.total), icon: <TrendingUp size={20} className="text-blue-600" />, bg: 'bg-blue-50' },
-          { label: 'Ventas totales', value: String(kpis.count), icon: <BadgeDollarSign size={20} className="text-emerald-600" />, bg: 'bg-emerald-50' },
-          { label: 'Servicios',     value: String(kpis.services), icon: <Wrench size={20} className="text-violet-600" />, bg: 'bg-violet-50' },
-          { label: 'Productos',     value: String(kpis.products), icon: <Package size={20} className="text-amber-600" />, bg: 'bg-amber-50' },
-        ].map(({ label, value, icon, bg }) => (
-          <div key={label} className="bg-white border border-slate-200 rounded-2xl p-4 flex items-center gap-3">
-            <div className={`w-10 h-10 rounded-xl ${bg} flex items-center justify-center shrink-0`}>{icon}</div>
-            <div>
-              <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide">{label}</p>
-              <p className="text-xl font-bold text-slate-800 mt-0.5">{value}</p>
+      {/* KPIs — montos en soles + comparación mensual + packs vigentes */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        {/* Total del mes con variación vs mes anterior */}
+        <div className="bg-white border border-slate-200 rounded-2xl p-4">
+          <div className="flex items-center gap-2 mb-1">
+            <div className="w-8 h-8 rounded-lg bg-blue-50 flex items-center justify-center shrink-0">
+              <BadgeDollarSign size={16} className="text-blue-600" />
+            </div>
+            <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide">Total del mes</p>
+          </div>
+          <p className="text-xl font-bold text-slate-800">{currency(kpis.total)}</p>
+          {monthDelta !== null && (
+            <p className={`text-xs font-semibold mt-1 flex items-center gap-1 ${
+              monthDelta >= 0 ? 'text-emerald-600' : 'text-rose-500'
+            }`}>
+              {monthDelta >= 0 ? <TrendingUp size={13} /> : <TrendingDown size={13} />}
+              {monthDelta >= 0 ? '+' : ''}{monthDelta.toFixed(0)}% vs {formatMonthLabel(prevMonthKey(filterMonth)).split(' ')[0]}
+            </p>
+          )}
+        </div>
+
+        {/* Ingresos por servicios */}
+        <div className="bg-white border border-slate-200 rounded-2xl p-4">
+          <div className="flex items-center gap-2 mb-1">
+            <div className="w-8 h-8 rounded-lg bg-violet-50 flex items-center justify-center shrink-0">
+              <Wrench size={16} className="text-violet-600" />
+            </div>
+            <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide">Servicios</p>
+          </div>
+          <p className="text-xl font-bold text-slate-800">{currency(kpis.serviceRevenue)}</p>
+          <p className="text-xs text-slate-400 mt-1">{kpis.serviceCount} venta{kpis.serviceCount !== 1 ? 's' : ''}</p>
+        </div>
+
+        {/* Ingresos por productos */}
+        <div className="bg-white border border-slate-200 rounded-2xl p-4">
+          <div className="flex items-center gap-2 mb-1">
+            <div className="w-8 h-8 rounded-lg bg-amber-50 flex items-center justify-center shrink-0">
+              <Package size={16} className="text-amber-600" />
+            </div>
+            <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide">Productos</p>
+          </div>
+          <p className="text-xl font-bold text-slate-800">{currency(kpis.productRevenue)}</p>
+          <p className="text-xs text-slate-400 mt-1">{kpis.productCount} venta{kpis.productCount !== 1 ? 's' : ''}</p>
+        </div>
+
+        {/* Packs vigentes */}
+        <button
+          onClick={() => setActiveTab('packs')}
+          className="bg-white border border-slate-200 rounded-2xl p-4 text-left hover:border-violet-300 transition-colors cursor-pointer"
+        >
+          <div className="flex items-center gap-2 mb-1">
+            <div className="w-8 h-8 rounded-lg bg-violet-50 flex items-center justify-center shrink-0">
+              <CalendarRange size={16} className="text-violet-600" />
+            </div>
+            <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide">Packs vigentes</p>
+          </div>
+          <p className="text-xl font-bold text-slate-800">{activePacks.length}</p>
+          {expiringPacks.length > 0 ? (
+            <p className="text-xs font-semibold text-amber-600 mt-1 flex items-center gap-1">
+              <AlertTriangle size={13} />
+              {expiringPacks.length} vence{expiringPacks.length !== 1 ? 'n' : ''} pronto
+            </p>
+          ) : (
+            <p className="text-xs text-slate-400 mt-1">activos hoy</p>
+          )}
+        </button>
+      </div>
+
+      {/* Pestañas: Ventas | Packs vigentes */}
+      <div className="flex gap-1 border-b border-slate-200">
+        <button
+          onClick={() => setActiveTab('sales')}
+          className={`px-4 py-2.5 text-sm font-semibold transition-colors border-b-2 -mb-px ${
+            activeTab === 'sales'
+              ? 'border-blue-600 text-blue-700'
+              : 'border-transparent text-slate-400 hover:text-slate-600'
+          }`}
+        >
+          Ventas
+        </button>
+        <button
+          onClick={() => setActiveTab('packs')}
+          className={`px-4 py-2.5 text-sm font-semibold transition-colors border-b-2 -mb-px flex items-center gap-1.5 ${
+            activeTab === 'packs'
+              ? 'border-blue-600 text-blue-700'
+              : 'border-transparent text-slate-400 hover:text-slate-600'
+          }`}
+        >
+          Packs vigentes
+          {activePacks.length > 0 && (
+            <span className={`text-xs font-bold px-1.5 py-0.5 rounded-full ${
+              activeTab === 'packs' ? 'bg-blue-50 text-blue-600' : 'bg-slate-100 text-slate-500'
+            }`}>
+              {activePacks.length}
+            </span>
+          )}
+        </button>
+      </div>
+
+      {activeTab === 'sales' ? (
+        <>
+          {/* Filtros: búsqueda por paciente, tipo y mes */}
+          <div className="flex flex-wrap gap-3 items-center">
+            <div className="relative flex-1 min-w-44">
+              <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+              <input
+                type="text"
+                placeholder="Buscar paciente..."
+                value={patientSearch}
+                onChange={e => setPatientSearch(e.target.value)}
+                className="w-full pl-9 pr-4 py-2 rounded-xl bg-white border border-slate-200 focus:border-blue-500 focus:ring-2 focus:ring-blue-100 outline-none text-sm shadow-sm"
+              />
+            </div>
+
+            <div className="flex bg-slate-100 rounded-xl p-1 gap-1">
+              {([
+                { key: 'all',     label: 'Todas' },
+                { key: 'service', label: 'Servicios' },
+                { key: 'product', label: 'Productos' },
+              ] as { key: typeof filterType; label: string }[]).map(({ key, label }) => (
+                <button
+                  key={key}
+                  onClick={() => setFilterType(key)}
+                  className={`px-3 py-1.5 rounded-lg text-sm font-semibold transition-all ${
+                    filterType === key ? 'bg-white text-blue-700 shadow-sm' : 'text-slate-500 hover:text-slate-700'
+                  }`}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+
+            <div className="flex items-center gap-2 bg-white border border-slate-200 rounded-xl px-3 py-2 shadow-sm">
+              <Calendar size={14} className="text-slate-400 shrink-0" />
+              <input
+                type="month"
+                value={filterMonth}
+                onChange={e => setFilterMonth(e.target.value)}
+                className="text-sm outline-none bg-transparent text-slate-700 font-medium"
+              />
             </div>
           </div>
-        ))}
-      </div>
 
-      {/* Filtros */}
-      <div className="flex flex-wrap gap-3 items-center">
-        {/* Tipo */}
-        <div className="flex bg-slate-100 rounded-xl p-1 gap-1">
-          {([
-            { key: 'all',     label: 'Todas' },
-            { key: 'service', label: 'Servicios' },
-            { key: 'product', label: 'Productos' },
-          ] as { key: typeof filterType; label: string }[]).map(({ key, label }) => (
-            <button
-              key={key}
-              onClick={() => setFilterType(key)}
-              className={`px-3 py-1.5 rounded-lg text-sm font-semibold transition-all ${
-                filterType === key ? 'bg-white text-blue-700 shadow-sm' : 'text-slate-500 hover:text-slate-700'
-              }`}
-            >
-              {label}
-            </button>
-          ))}
-        </div>
+          {/* Lista de ventas agrupada por día con subtotal */}
+          {salesByDay.length === 0 ? (
+            <div className="bg-white border border-slate-200 rounded-2xl py-14 text-center">
+              <BadgeDollarSign size={32} className="text-slate-200 mx-auto mb-3" />
+              <p className="text-slate-400 text-sm font-medium">
+                {patientSearch.trim()
+                  ? 'No hay ventas que coincidan con la búsqueda.'
+                  : 'No hay ventas registradas en este período.'}
+              </p>
+            </div>
+          ) : (
+            <div className="space-y-5">
+              {salesByDay.map(([day, daySales]) => (
+                <div key={day}>
+                  {/* Encabezado del día con subtotal */}
+                  <div className="flex items-center justify-between px-1 mb-2">
+                    <p className={`text-xs font-bold uppercase tracking-wide ${
+                      day === TODAY ? 'text-blue-600' : 'text-slate-400'
+                    }`}>
+                      {formatDayHeader(day)}
+                    </p>
+                    <p className="text-xs font-bold text-slate-500">
+                      {currency(daySales.reduce((sum, s) => sum + s.total, 0))}
+                    </p>
+                  </div>
 
-        {/* Mes */}
-        <div className="flex items-center gap-2 bg-white border border-slate-200 rounded-xl px-3 py-2 shadow-sm">
-          <ChevronDown size={14} className="text-slate-400 shrink-0" />
-          <input
-            type="month"
-            value={filterMonth}
-            onChange={e => setFilterMonth(e.target.value)}
-            className="text-sm outline-none bg-transparent text-slate-700 font-medium"
-          />
-        </div>
-      </div>
+                  <div className="space-y-2">
+                    {daySales.map(sale => (
+                      <div
+                        key={sale.id}
+                        className="bg-white border border-slate-100 rounded-2xl px-5 py-3.5 flex items-center gap-4 shadow-sm"
+                      >
+                        <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${
+                          sale.type === 'service' ? 'bg-violet-50' : 'bg-amber-50'
+                        }`}>
+                          {sale.type === 'service'
+                            ? <Wrench size={18} className="text-violet-600" />
+                            : <Package size={18} className="text-amber-600" />}
+                        </div>
 
-      {/* Lista de ventas */}
-      <div className="space-y-3">
-        {filteredSales.length === 0 ? (
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <p className="text-sm font-bold text-slate-800 truncate">{sale.itemName}</p>
+                            {sale.qty > 1 && <span className="text-xs text-slate-400 font-semibold">× {sale.qty}</span>}
+                            {!sale.validOnlyToday && (
+                              <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-violet-50 text-violet-600">
+                                Pack
+                              </span>
+                            )}
+                          </div>
+                          <div className="flex items-center gap-3 mt-0.5 text-xs text-slate-400 flex-wrap">
+                            <span className="flex items-center gap-1"><User size={11} />{sale.patientName}</span>
+                            {sale.createdByName && <span>registró {sale.createdByName}</span>}
+                            {formatTime(sale.createdAt) && <span>{formatTime(sale.createdAt)}</span>}
+                            {!sale.validOnlyToday && sale.validFrom && sale.validTo && (
+                              <span className="flex items-center gap-1 text-violet-500 font-semibold">
+                                <CalendarRange size={11} />
+                                {formatShortDate(sale.validFrom)} → {formatShortDate(sale.validTo)}
+                              </span>
+                            )}
+                          </div>
+                          {sale.notes && (
+                            <p className="text-xs text-slate-400 italic mt-0.5 truncate" title={sale.notes}>
+                              {sale.notes}
+                            </p>
+                          )}
+                        </div>
+
+                        <div className="flex items-center gap-3 shrink-0">
+                          <p className="text-base font-bold text-slate-800">{currency(sale.total)}</p>
+                          {isTI && (
+                            <button
+                              onClick={() => setConfirmDeleteId(sale.id)}
+                              title="Eliminar venta"
+                              className="p-1.5 rounded-lg text-slate-300 hover:text-rose-500 hover:bg-rose-50 transition-colors"
+                            >
+                              <Trash2 size={16} />
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </>
+      ) : (
+        /* ── Pestaña: Packs vigentes ─────────────────────────────────────────── */
+        activePacks.length === 0 ? (
           <div className="bg-white border border-slate-200 rounded-2xl py-14 text-center">
-            <BadgeDollarSign size={32} className="text-slate-200 mx-auto mb-3" />
-            <p className="text-slate-400 text-sm font-medium">No hay ventas registradas en este período.</p>
+            <CalendarRange size={32} className="text-slate-200 mx-auto mb-3" />
+            <p className="text-slate-400 text-sm font-medium">No hay packs vigentes en este momento.</p>
+            <p className="text-slate-300 text-xs mt-1">
+              Los packs se crean al registrar una venta de servicio con rango de fechas.
+            </p>
           </div>
         ) : (
-          filteredSales.map(sale => (
-            <div
-              key={sale.id}
-              className="bg-white border border-slate-100 rounded-2xl px-5 py-4 flex items-center gap-4 shadow-sm"
-            >
-              {/* Ícono tipo */}
-              <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${
-                sale.type === 'service' ? 'bg-violet-50' : 'bg-amber-50'
-              }`}>
-                {sale.type === 'service'
-                  ? <Wrench size={18} className="text-violet-600" />
-                  : <Package size={18} className="text-amber-600" />}
-              </div>
-
-              {/* Info */}
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-2 flex-wrap">
-                  <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${
-                    sale.type === 'service' ? 'bg-violet-50 text-violet-600' : 'bg-amber-50 text-amber-600'
+          <div className="space-y-2">
+            {activePacks.map(pack => {
+              const remaining = daysUntil(pack.validTo!);
+              return (
+                <div
+                  key={pack.id}
+                  className="bg-white border border-slate-100 rounded-2xl px-5 py-3.5 flex items-center gap-4 shadow-sm"
+                >
+                  <div className="w-10 h-10 rounded-full bg-blue-50 flex items-center justify-center shrink-0 text-xs font-bold text-blue-700">
+                    {initials(pack.patientName)}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-bold text-slate-800 truncate">
+                      {pack.patientName} — {pack.itemName}
+                    </p>
+                    <p className="text-xs text-slate-400 mt-0.5">
+                      {formatShortDate(pack.validFrom!)} → {formatShortDate(pack.validTo!)} · pagado {currency(pack.total)}
+                    </p>
+                  </div>
+                  <span className={`text-xs font-bold px-2.5 py-1 rounded-full shrink-0 ${
+                    remaining <= 7
+                      ? 'bg-amber-50 text-amber-700'
+                      : 'bg-emerald-50 text-emerald-700'
                   }`}>
-                    {sale.type === 'service' ? 'Servicio' : 'Producto'}
+                    {remaining <= 7 && remaining > 0
+                      ? `Vence en ${remaining} día${remaining !== 1 ? 's' : ''}`
+                      : remaining === 0
+                        ? 'Vence hoy'
+                        : `${remaining} días restantes`}
                   </span>
-                  {!sale.validOnlyToday && (
-                    <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-blue-50 text-blue-600">
-                      Pack
-                    </span>
-                  )}
-                  <p className="text-sm font-bold text-slate-800 truncate">{sale.itemName}</p>
                 </div>
-                <div className="flex items-center gap-3 mt-0.5 text-xs text-slate-400 flex-wrap">
-                  <span className="flex items-center gap-1"><User size={11} />{sale.patientName}</span>
-                  <span>{formatDate(sale.date)}</span>
-                  {sale.qty > 1 && <span>× {sale.qty}</span>}
-                  {/* Vigencia del pack */}
-                  {!sale.validOnlyToday && sale.validFrom && sale.validTo && (
-                    <span className="flex items-center gap-1 text-violet-500 font-semibold">
-                      <CalendarRange size={11} />
-                      {sale.validFrom} → {sale.validTo}
-                    </span>
-                  )}
-                  {sale.notes && <span className="italic truncate max-w-40">{sale.notes}</span>}
-                </div>
-              </div>
+              );
+            })}
+          </div>
+        )
+      )}
 
-              {/* Total + eliminar */}
-              <div className="flex items-center gap-3 shrink-0">
-                <p className="text-lg font-bold text-slate-800">{currency(sale.total)}</p>
-                {isTI && (
-                  <button
-                    onClick={() => handleDeleteSale(sale.id)}
-                    disabled={deletingId === sale.id}
-                    title="Eliminar venta"
-                    className="p-1.5 rounded-lg text-slate-300 hover:text-rose-500 hover:bg-rose-50 transition-colors disabled:opacity-40"
-                  >
-                    <Trash2 size={16} />
-                  </button>
-                )}
-              </div>
-            </div>
-          ))
-        )}
-      </div>
+      {/* Confirmación de eliminación (reemplaza window.confirm) */}
+      {confirmDeleteId && (
+        <ConfirmModal
+          message="¿Eliminar esta venta? Esta acción no se puede deshacer."
+          onConfirm={handleConfirmDelete}
+          onCancel={() => setConfirmDeleteId(null)}
+        />
+      )}
 
       {/* ── Modal: Gestionar precios de servicios ─────────────────────────────── */}
       {showPrices && (

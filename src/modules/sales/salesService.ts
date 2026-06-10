@@ -1,6 +1,6 @@
 import {
-  collection, addDoc, doc, getDoc, setDoc, deleteDoc,
-  onSnapshot, query, orderBy, Unsubscribe,
+  collection, addDoc, doc, getDoc, getDocs, setDoc, deleteDoc,
+  onSnapshot, query, where, orderBy, Unsubscribe,
 } from 'firebase/firestore';
 import { db } from '../../lib/firebase';
 
@@ -48,13 +48,50 @@ export interface SaleProduct {
   price?: number;
 }
 
-/** Escucha ventas ordenadas por fecha. */
-export function subscribeToSales(
+/**
+ * Escucha las ventas de un mes concreto (YYYY-MM).
+ * Filtra en Firestore — solo descarga los documentos del mes visible,
+ * no toda la colección histórica.
+ */
+export function subscribeToSalesByMonth(
+  monthKey: string,
   onData: (sales: Sale[]) => void,
   onError: (err: Error) => void,
 ): Unsubscribe {
   return onSnapshot(
-    query(collection(db, 'sales'), orderBy('date', 'desc'), orderBy('createdAt', 'desc')),
+    query(
+      collection(db, 'sales'),
+      where('date', '>=', `${monthKey}-01`),
+      where('date', '<=', `${monthKey}-31`),
+      orderBy('date', 'desc'),
+      orderBy('createdAt', 'desc'),
+    ),
+    snap => onData(snap.docs.map(d => ({ id: d.id, ...d.data() }) as Sale)),
+    onError,
+  );
+}
+
+/** Total vendido en un mes (lectura única — para la comparación mensual). */
+export async function fetchMonthTotal(monthKey: string): Promise<number> {
+  const snap = await getDocs(query(
+    collection(db, 'sales'),
+    where('date', '>=', `${monthKey}-01`),
+    where('date', '<=', `${monthKey}-31`),
+  ));
+  return snap.docs.reduce((sum, d) => sum + ((d.data() as Sale).total ?? 0), 0);
+}
+
+/**
+ * Escucha las ventas tipo pack (con rango de vigencia).
+ * Filtro de igualdad único — no requiere índice compuesto.
+ * La vigencia (validFrom ≤ hoy ≤ validTo) se filtra en el cliente.
+ */
+export function subscribeToPacks(
+  onData: (sales: Sale[]) => void,
+  onError: (err: Error) => void,
+): Unsubscribe {
+  return onSnapshot(
+    query(collection(db, 'sales'), where('validOnlyToday', '==', false)),
     snap => onData(snap.docs.map(d => ({ id: d.id, ...d.data() }) as Sale)),
     onError,
   );
