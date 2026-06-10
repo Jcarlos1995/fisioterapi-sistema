@@ -15,6 +15,7 @@ import {
 import { subscribeToPatients } from '../patients/patientsService';
 import { subscribeToProducts } from '../products/productsService';
 import { fetchProfessionalByEmail } from '../professionals/professionalsService';
+import { subscribeToTherapyTasks, TherapyTask } from '../daily-therapy/dailyTherapyService';
 import { THERAPY_TYPES } from '../../constants';
 
 interface PortalProduct {
@@ -127,6 +128,26 @@ const SalesArea: React.FC = () => {
     console.error(`onSnapshot [${label}]:`, err);
     setLoadError('No se pudieron cargar los datos. Verifica tu conexión e intenta de nuevo.');
   };
+
+  // ── Tratamientos del catálogo (terapia diaria) — vendibles además de asignables ──
+  const [therapyTasks, setTherapyTasks] = useState<TherapyTask[]>([]);
+  useEffect(() => {
+    return subscribeToTherapyTasks(
+      (data) => setTherapyTasks(data),
+      onSnapErr('therapyTasks'),
+    );
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Catálogo de venta: 5 servicios base (siempre) + tratamientos activos (sin duplicar)
+  const sellableServices = useMemo(() => {
+    const base = new Set<string>(THERAPY_TYPES);
+    const extras = therapyTasks
+      .filter(t => t.active && !base.has(t.name))
+      .map(t => t.name)
+      .sort((a, b) => a.localeCompare(b));
+    return [...THERAPY_TYPES, ...extras];
+  }, [therapyTasks]);
 
   // ── Productos ────────────────────────────────────────────────────────────────
   const [products, setProducts] = useState<PortalProduct[]>([]);
@@ -598,7 +619,7 @@ const SalesArea: React.FC = () => {
       {showPrices && (
         <PricesModal
           prices={servicePrices}
-          services={THERAPY_TYPES}
+          services={sellableServices}
           onClose={() => setShowPrices(false)}
           onSave={async (updated) => {
             try {
@@ -618,7 +639,7 @@ const SalesArea: React.FC = () => {
         <RegisterSaleModal
           patients={patients}
           products={products}
-          services={THERAPY_TYPES}
+          services={sellableServices}
           servicePrices={servicePrices}
           onClose={() => setShowRegister(false)}
           onSubmit={async (payload) => {
@@ -675,7 +696,12 @@ const PricesModal: React.FC<PricesModalProps> = ({ prices, services, onClose, on
         <div className="px-6 py-4 space-y-3 max-h-80 overflow-y-auto">
           {services.map(service => (
             <div key={service} className="flex items-center gap-3">
-              <span className="text-sm text-slate-700 flex-1 font-medium">{service}</span>
+              <span className="text-sm text-slate-700 flex-1 font-medium flex items-center gap-2">
+                {service}
+                {(THERAPY_TYPES as readonly string[]).includes(service) && (
+                  <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-blue-50 text-blue-500 uppercase">base</span>
+                )}
+              </span>
               <div className="relative w-28">
                 <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm">S/</span>
                 <input

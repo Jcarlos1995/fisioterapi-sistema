@@ -103,9 +103,13 @@ export async function fetchServicePrices(): Promise<Record<string, number>> {
   return snap.exists() ? (snap.data() as Record<string, number>) : {};
 }
 
-/** Guarda los precios de servicios. */
+/**
+ * Guarda los precios de servicios.
+ * merge: true — conserva precios de tratamientos antiguos que ya no estén
+ * en el catálogo visible (sesiones legadas aún pueden referenciarlos).
+ */
 export async function saveServicePrices(prices: Record<string, number>): Promise<void> {
-  await setDoc(doc(db, 'servicePrices', 'default'), prices);
+  await setDoc(doc(db, 'servicePrices', 'default'), prices, { merge: true });
 }
 
 /** Elimina una venta. */
