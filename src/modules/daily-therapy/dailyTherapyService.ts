@@ -1,6 +1,6 @@
 import {
   collection, addDoc, doc, updateDoc, deleteDoc,
-  onSnapshot, query, where, orderBy, Unsubscribe,
+  onSnapshot, getDocs, query, where, orderBy, Unsubscribe,
 } from 'firebase/firestore';
 import { db } from '../../lib/firebase';
 
@@ -74,6 +74,42 @@ export function subscribeToPatientTasks(
     snap => onData(snap.docs.map(d => ({ id: d.id, ...d.data() }) as TherapyPatientTask)),
     onError,
   );
+}
+
+/**
+ * Escucha TODAS las tareas asignadas de una fecha (todos los pacientes).
+ * Alimenta el panel "Pacientes de hoy" y los KPIs del día.
+ * Filtro de igualdad único — no requiere índice compuesto.
+ */
+export function subscribeToTasksByDate(
+  date: string,
+  onData: (tasks: TherapyPatientTask[]) => void,
+  onError: (err: Error) => void,
+): Unsubscribe {
+  return onSnapshot(
+    query(collection(db, 'therapyPatientTasks'), where('date', '==', date)),
+    snap => onData(snap.docs.map(d => ({ id: d.id, ...d.data() }) as TherapyPatientTask)),
+    onError,
+  );
+}
+
+/**
+ * Tareas de un paciente en varias fechas (para la tira de adherencia semanal).
+ * Una lectura puntual por fecha — sin índices compuestos.
+ */
+export async function fetchPatientTasksForDates(
+  patientId: string,
+  dates: string[],
+): Promise<Record<string, TherapyPatientTask[]>> {
+  const results = await Promise.all(dates.map(async (date) => {
+    const snap = await getDocs(query(
+      collection(db, 'therapyPatientTasks'),
+      where('patientId', '==', patientId),
+      where('date', '==', date),
+    ));
+    return [date, snap.docs.map(d => ({ id: d.id, ...d.data() }) as TherapyPatientTask)] as const;
+  }));
+  return Object.fromEntries(results);
 }
 
 interface AssignTaskParams {
