@@ -63,11 +63,10 @@ describe('PatientsManager — estructura', () => {
     expect(screen.getByPlaceholderText(/buscar por nombre o dni/i)).toBeInTheDocument();
   });
 
-  it('muestra las cabeceras de la tabla', () => {
+  it('muestra el contador de pacientes y el estado vacío', () => {
     render(<PatientsManager />);
-    expect(screen.getByText('Nombre')).toBeInTheDocument();
-    expect(screen.getByText('DNI')).toBeInTheDocument();
-    expect(screen.getByText('Acciones')).toBeInTheDocument();
+    expect(screen.getByText(/0 pacientes/i)).toBeInTheDocument();
+    expect(screen.getByText(/aún no hay pacientes registrados/i)).toBeInTheDocument();
   });
 });
 

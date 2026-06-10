@@ -97,6 +97,14 @@ export function subscribeToPacks(
   );
 }
 
+/** Ventas de un paciente (lectura única — para el expediente). */
+export async function fetchSalesByPatient(patientId: string): Promise<Sale[]> {
+  const snap = await getDocs(
+    query(collection(db, 'sales'), where('patientId', '==', patientId)),
+  );
+  return snap.docs.map(d => ({ id: d.id, ...d.data() }) as Sale);
+}
+
 /** Obtiene los precios de servicios (lectura única). */
 export async function fetchServicePrices(): Promise<Record<string, number>> {
   const snap = await getDoc(doc(db, 'servicePrices', 'default'));

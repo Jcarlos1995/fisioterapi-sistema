@@ -20,6 +20,25 @@ export function subscribeToSessions(
   );
 }
 
+/** Sesiones de un paciente (lectura única — para el expediente). */
+export async function fetchSessionsByPatient(patientId: string): Promise<Session[]> {
+  const snap = await getDocs(
+    query(collection(db, 'sessions'), where('patientId', '==', patientId)),
+  );
+  return snap.docs.map(d => ({ id: d.id, ...d.data() }) as Session);
+}
+
+/**
+ * IDs de pacientes con al menos una sesión desde una fecha dada.
+ * Para detectar pacientes inactivos sin descargar toda la colección.
+ */
+export async function fetchActivePatientIdsSince(sinceDate: string): Promise<Set<string>> {
+  const snap = await getDocs(
+    query(collection(db, 'sessions'), where('date', '>=', sinceDate)),
+  );
+  return new Set(snap.docs.map(d => (d.data() as Session).patientId));
+}
+
 /** Obtiene los precios de servicios configurados (doc único). */
 export async function fetchServicePrices(): Promise<Record<string, number>> {
   const snap = await getDoc(doc(db, 'servicePrices', 'default'));
