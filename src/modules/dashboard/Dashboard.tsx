@@ -1,33 +1,76 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
-  Users, UserSquare2, Package, BrainCircuit,
-  Activity, Calendar, ClipboardList, AlertTriangle, X, BellRing, ArrowRight, CheckCheck, WifiOff,
+  BrainCircuit, ClipboardList, AlertTriangle, CheckCheck, WifiOff,
+  CalendarDays, ListChecks, Globe, TrendingUp, TrendingDown,
+  BadgeDollarSign, UserPlus, CalendarX, Package, CalendarRange, Bell, Lock,
 } from 'lucide-react';
 import { auth } from '../../lib/firebase';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
 import { Link } from 'react-router-dom';
-import StatCard from '../../shared/components/StatCard';
 import { useDashboardData } from './hooks/useDashboardData';
 import { useAuth } from '../../context/AuthContext';
 import { useToast } from '../../context/ToastContext';
-import { SkeletonStatCards, SkeletonCharts, SkeletonHeader } from '../../shared/components/SkeletonLoader';
+import { SkeletonStatCards, SkeletonCharts } from '../../shared/components/SkeletonLoader';
 import { subscribeToCancellationNotifications, markNotificationRead, CancellationNotification } from './dashboardService';
+import { subscribeToTasksByDate, TherapyPatientTask } from '../daily-therapy/dailyTherapyService';
+import { subscribeToPacks, Sale } from '../sales/salesService';
 
 const MONTHS = ["Enero","Febrero","Marzo","Abril","Mayo","Junio","Julio","Agosto","Septiembre","Octubre","Noviembre","Diciembre"];
-const COLORS  = ['#10b981', '#3b82f6', '#6366f1', '#f59e0b'];
+
+// Colores de la dona por estado — alineados con los badges del módulo Sesiones
+const STATUS_COLORS: Record<string, string> = {
+  Programada: '#f59e0b',
+  Confirmada: '#3b82f6',
+  Efectuada:  '#10b981',
+  Pagada:     '#0f766e',
+  Cancelada:  '#fb7185',
+};
+
+const TODAY = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Lima' });
+
+/** Días que faltan hasta una fecha YYYY-MM-DD (Lima). */
+function daysUntil(dateStr: string): number {
+  const end = new Date(`${dateStr}T23:59:59-05:00`).getTime();
+  return Math.max(0, Math.ceil((end - Date.now()) / 86_400_000));
+}
+
+/** Variación porcentual contra el período anterior (null si no hay base). */
+function pctDelta(current: number, prev: number | null): number | null {
+  if (prev === null || prev === 0) return null;
+  return ((current - prev) / prev) * 100;
+}
+
+function currency(n: number): string {
+  return `S/ ${n.toFixed(2)}`;
+}
+
+/** Flecha de tendencia verde/roja con el porcentaje. */
+const Delta: React.FC<{ value: number | null }> = ({ value }) => {
+  if (value === null) return null;
+  const up = value >= 0;
+  return (
+    <p className={`text-xs font-semibold mt-1 flex items-center gap-1 ${up ? 'text-emerald-600' : 'text-rose-500'}`}>
+      {up ? <TrendingUp size={13} /> : <TrendingDown size={13} />}
+      {up ? '+' : ''}{value.toFixed(0)}%
+    </p>
+  );
+};
 
 const Dashboard: React.FC = () => {
-  const { isTI, permissions } = useAuth();
+  const { isTI, role, permissions } = useAuth();
   const { showToast } = useToast();
-  const [selectedMonth,   setSelectedMonth]   = useState(new Date().getMonth());
-  const [showStockAlert,  setShowStockAlert]   = useState(true);
-  const [showLoadError,   setShowLoadError]    = useState(true);
-  const [analysis,        setAnalysis]         = useState<string | null>(null);
-  const [loadingIA,       setLoadingIA]        = useState(false);
+  const isAdminOrTI = isTI || role === 'admin';
+
+  const [selectedMonth, setSelectedMonth] = useState(new Date().getMonth());
+  const [showLoadError, setShowLoadError] = useState(true);
+  const [analysis,      setAnalysis]      = useState<string | null>(null);
+  const [loadingIA,     setLoadingIA]     = useState(false);
   const [cancellations, setCancellations] = useState<CancellationNotification[]>([]);
 
-  const { stats, chartData, webPendingAppointments, loadError, isLoading } = useDashboardData(selectedMonth);
+  const { stats, chartData, statusData, webPendingAppointments, loadError, isLoading } =
+    useDashboardData(selectedMonth, isAdminOrTI);
 
+  // Notificaciones de cancelación
   useEffect(() => {
     return subscribeToCancellationNotifications(
       (rows) => setCancellations(rows),
@@ -35,16 +78,51 @@ const Dashboard: React.FC = () => {
     );
   }, []);
 
+  // Terapia diaria de hoy (todos los pacientes)
+  const [todayTasks, setTodayTasks] = useState<TherapyPatientTask[]>([]);
+  useEffect(() => {
+    return subscribeToTasksByDate(
+      TODAY,
+      (data) => setTodayTasks(data),
+      (err) => console.error('[Dashboard] todayTasks:', err),
+    );
+  }, []);
+  const therapyDone  = todayTasks.filter(t => t.done).length;
+  const therapyTotal = todayTasks.length;
+  const therapyPct   = therapyTotal > 0 ? Math.round((therapyDone / therapyTotal) * 100) : null;
+
+  // Packs por vencer (solo admin/TI — el chip enlaza a Área Reservada)
+  const [packs, setPacks] = useState<Sale[]>([]);
+  useEffect(() => {
+    if (!isAdminOrTI) return;
+    return subscribeToPacks(setPacks, (err) => console.error('[Dashboard] packs:', err));
+  }, [isAdminOrTI]);
+  const expiringPacks = useMemo(() =>
+    packs.filter(p =>
+      p.validFrom && p.validTo && p.validFrom <= TODAY && p.validTo >= TODAY &&
+      daysUntil(p.validTo) <= 7
+    ).length,
+    [packs]);
+
+  // KPIs derivados del mes
+  const prevMonthName  = MONTHS[(selectedMonth + 11) % 12];
+  const revenueDelta   = stats.revenueMonth !== null ? pctDelta(stats.revenueMonth, stats.revenuePrev) : null;
+  const sessionsDelta  = pctDelta(stats.monthDone, stats.prevMonthDone || null);
+  const cancelRate     = stats.monthTotal > 0 ? Math.round((stats.monthCancelled / stats.monthTotal) * 100) : null;
+
   const generateAnalysis = async () => {
     setLoadingIA(true);
     setAnalysis(null);
     try {
+      const revenueLine = stats.revenueMonth !== null
+        ? `- Ingresos del mes: ${currency(stats.revenueMonth)}${stats.revenuePrev ? ` (mes anterior: ${currency(stats.revenuePrev)})` : ''}\n      `
+        : '';
       const prompt = `Actúa como un consultor experto en gestión de clínicas de fisioterapia y rehabilitación.
-      Analiza los siguientes indicadores de Fisioterapi Chepén:
-      - Pacientes registrados: ${stats.patients}
-      - Especialistas activos: ${stats.professionals}
-      - Sesiones totales acumuladas: ${stats.totalSessions}
-      - Inversión en inventario: S/ ${stats.inventoryValue}
+      Analiza los siguientes indicadores de Fisioterapi Chepén para el mes de ${MONTHS[selectedMonth]}:
+      ${revenueLine}- Sesiones realizadas en el mes: ${stats.monthDone} (mes anterior: ${stats.prevMonthDone})
+      - Citas canceladas: ${stats.monthCancelled} de ${stats.monthTotal}${cancelRate !== null ? ` (${cancelRate}%)` : ''}
+      - Pacientes nuevos del mes: ${stats.newPatientsMonth} (total registrados: ${stats.patients})
+      - Inversión en inventario: ${currency(stats.inventoryValue)}
       - Alerta de stock: ${stats.lowStockItems} productos críticos.
 
       Proporciona un análisis ejecutivo breve de 3 puntos clave y una recomendación estratégica.`;
@@ -129,36 +207,7 @@ const Dashboard: React.FC = () => {
         </div>
       )}
 
-      {webPendingAppointments > 0 && (
-        <div className="bg-amber-50 border-l-4 border-amber-400 p-4 rounded-r-2xl shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-3 animate-bounce">
-          <div className="flex items-center gap-3">
-            <div className="bg-amber-100 p-3 rounded-full text-amber-600 shrink-0"><BellRing size={22} /></div>
-            <div>
-              <h3 className="text-amber-900 font-bold text-sm sm:text-base">¡Tienes {webPendingAppointments} citas programadas desde la Web!</h3>
-              <p className="text-amber-700 text-xs sm:text-sm">Revisa la lista de sesiones para asignar especialistas.</p>
-            </div>
-          </div>
-          <Link to="/sessions" className="bg-amber-600 text-white px-4 py-2 rounded-xl font-bold hover:bg-amber-700 transition-all flex items-center gap-2 shadow-md text-sm shrink-0 self-start sm:self-auto">
-            Revisar <ArrowRight size={16} />
-          </Link>
-        </div>
-      )}
-
-      {stats.lowStockItems > 0 && showStockAlert && (
-        <div className="bg-rose-600 text-white px-6 py-4 rounded-2xl shadow-lg flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="bg-rose-500 p-2 rounded-xl"><AlertTriangle size={24} /></div>
-            <div>
-              <p className="font-bold text-lg">Alerta de Inventario</p>
-              <p className="text-sm opacity-90">Hay {stats.lowStockItems} productos con stock bajo.</p>
-            </div>
-          </div>
-          <button onClick={() => setShowStockAlert(false)} className="p-2 hover:bg-rose-700 rounded-full transition-colors">
-            <X size={24} />
-          </button>
-        </div>
-      )}
-
+      {/* ── Cabecera ── */}
       <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4">
         <div>
           <h1 className="text-2xl sm:text-3xl font-bold text-slate-800 uppercase tracking-tight">Panel de Control</h1>
@@ -177,29 +226,178 @@ const Dashboard: React.FC = () => {
         </div>
       </div>
 
-      {isLoading ? <SkeletonStatCards /> : (
-        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-3 sm:gap-4">
-          <StatCard icon={<Users className="text-blue-600"/>}        label="Pacientes"       value={stats.patients} />
-          <StatCard icon={<UserSquare2 className="text-emerald-600"/>} label="Profesionales"  value={stats.professionals} />
-          <StatCard icon={<Calendar className="text-orange-500"/>}   label="Efectuadas"      value={stats.doneSessions} />
-          <StatCard icon={<Activity className="text-indigo-600"/>}   label="Total Sesiones"  value={stats.totalSessions} />
-          <StatCard
-            icon={<Package className={stats.lowStockItems > 0 ? "text-rose-600 animate-bounce" : "text-slate-600"}/>}
-            label="Valor Inventario"
-            value={`S/ ${stats.inventoryValue.toFixed(2)}`}
-          />
+      {isLoading ? <SkeletonStatCards /> : <>
+
+      {/* ── HOY ── */}
+      <div>
+        <p className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Hoy</p>
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4">
+          <Link to="/sessions" className="bg-white border border-slate-200 rounded-2xl p-4 hover:border-blue-300 transition-colors">
+            <div className="flex items-center gap-2 mb-1">
+              <div className="w-8 h-8 rounded-lg bg-blue-50 flex items-center justify-center shrink-0">
+                <CalendarDays size={16} className="text-blue-600" />
+              </div>
+              <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide">Citas de hoy</p>
+            </div>
+            <p className="text-xl font-bold text-slate-800">{stats.todayTotal}</p>
+            <p className="text-xs text-slate-400 mt-1">
+              {stats.todayConfirmed} confirmada{stats.todayConfirmed !== 1 ? 's' : ''}
+              {stats.todayNext ? ` · próxima ${stats.todayNext}` : ''}
+            </p>
+          </Link>
+
+          <Link to="/daily-therapy" className="bg-white border border-slate-200 rounded-2xl p-4 hover:border-emerald-300 transition-colors">
+            <div className="flex items-center gap-2 mb-1">
+              <div className="w-8 h-8 rounded-lg bg-emerald-50 flex items-center justify-center shrink-0">
+                <ListChecks size={16} className="text-emerald-600" />
+              </div>
+              <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide">Terapia diaria</p>
+            </div>
+            <p className="text-xl font-bold text-slate-800">
+              {therapyDone} <span className="text-sm font-semibold text-slate-400">/ {therapyTotal}</span>
+            </p>
+            <p className={`text-xs font-semibold mt-1 ${
+              therapyPct === null ? 'text-slate-300'
+              : therapyPct >= 75  ? 'text-emerald-600'
+              : therapyPct >= 40  ? 'text-amber-600'
+              : 'text-rose-500'
+            }`}>
+              {therapyPct === null ? 'sin tareas asignadas' : `${therapyPct}% de cumplimiento`}
+            </p>
+          </Link>
+
+          <Link to="/sessions" className="bg-white border border-slate-200 rounded-2xl p-4 hover:border-violet-300 transition-colors">
+            <div className="flex items-center gap-2 mb-1">
+              <div className="w-8 h-8 rounded-lg bg-violet-50 flex items-center justify-center shrink-0">
+                <Globe size={16} className="text-violet-600" />
+              </div>
+              <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide">Reservas web</p>
+            </div>
+            <p className={`text-xl font-bold ${webPendingAppointments > 0 ? 'text-amber-600' : 'text-slate-800'}`}>
+              {webPendingAppointments}
+            </p>
+            <p className="text-xs text-slate-400 mt-1">
+              {webPendingAppointments > 0 ? 'pendientes de confirmar' : 'todo confirmado'}
+            </p>
+          </Link>
+        </div>
+      </div>
+
+      {/* ── MES ── */}
+      <div>
+        <p className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">
+          {MONTHS[selectedMonth]} · comparado con {prevMonthName}
+        </p>
+        <div className={`grid grid-cols-2 ${isAdminOrTI ? 'lg:grid-cols-4' : 'lg:grid-cols-3'} gap-3 sm:gap-4`}>
+          {isAdminOrTI && (
+            <div className="bg-white border border-slate-200 rounded-2xl p-4">
+              <div className="flex items-center gap-2 mb-1">
+                <div className="w-8 h-8 rounded-lg bg-blue-50 flex items-center justify-center shrink-0">
+                  <BadgeDollarSign size={16} className="text-blue-600" />
+                </div>
+                <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide flex items-center gap-1">
+                  Ingresos <Lock size={10} className="text-slate-300" />
+                </p>
+              </div>
+              <p className="text-xl font-bold text-slate-800">{currency(stats.revenueMonth ?? 0)}</p>
+              <Delta value={revenueDelta} />
+            </div>
+          )}
+
+          <div className="bg-white border border-slate-200 rounded-2xl p-4">
+            <div className="flex items-center gap-2 mb-1">
+              <div className="w-8 h-8 rounded-lg bg-emerald-50 flex items-center justify-center shrink-0">
+                <CalendarDays size={16} className="text-emerald-600" />
+              </div>
+              <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide">Sesiones realizadas</p>
+            </div>
+            <p className="text-xl font-bold text-slate-800">{stats.monthDone}</p>
+            <Delta value={sessionsDelta} />
+          </div>
+
+          <div className="bg-white border border-slate-200 rounded-2xl p-4">
+            <div className="flex items-center gap-2 mb-1">
+              <div className="w-8 h-8 rounded-lg bg-violet-50 flex items-center justify-center shrink-0">
+                <UserPlus size={16} className="text-violet-600" />
+              </div>
+              <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide">Pacientes nuevos</p>
+            </div>
+            <p className="text-xl font-bold text-slate-800">{stats.newPatientsMonth}</p>
+            <p className="text-xs text-slate-400 mt-1">{stats.patients} en total</p>
+          </div>
+
+          <div className="bg-white border border-slate-200 rounded-2xl p-4">
+            <div className="flex items-center gap-2 mb-1">
+              <div className="w-8 h-8 rounded-lg bg-rose-50 flex items-center justify-center shrink-0">
+                <CalendarX size={16} className="text-rose-500" />
+              </div>
+              <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide">Cancelación</p>
+            </div>
+            <p className={`text-xl font-bold ${
+              cancelRate === null ? 'text-slate-300'
+              : cancelRate <= 10  ? 'text-emerald-600'
+              : cancelRate <= 20  ? 'text-amber-600'
+              : 'text-rose-500'
+            }`}>
+              {cancelRate === null ? '—' : `${cancelRate}%`}
+            </p>
+            <p className="text-xs text-slate-400 mt-1">
+              {stats.monthCancelled} de {stats.monthTotal} cita{stats.monthTotal !== 1 ? 's' : ''}
+            </p>
+          </div>
+        </div>
+      </div>
+
+      {/* ── Alertas (chips) ── */}
+      {(stats.lowStockItems > 0 || expiringPacks > 0 || cancellations.length > 0 || isAdminOrTI) && (
+        <div className="flex flex-wrap gap-2">
+          {stats.lowStockItems > 0 && (
+            <Link
+              to="/products"
+              className="inline-flex items-center gap-1.5 text-xs font-bold px-3 py-2 rounded-full bg-amber-50 text-amber-700 border border-amber-200 hover:bg-amber-100 transition-colors"
+            >
+              <AlertTriangle size={13} />
+              {stats.lowStockItems} producto{stats.lowStockItems !== 1 ? 's' : ''} con stock bajo
+            </Link>
+          )}
+          {isAdminOrTI && expiringPacks > 0 && (
+            <Link
+              to="/sales-area"
+              className="inline-flex items-center gap-1.5 text-xs font-bold px-3 py-2 rounded-full bg-violet-50 text-violet-700 border border-violet-200 hover:bg-violet-100 transition-colors"
+            >
+              <CalendarRange size={13} />
+              {expiringPacks} pack{expiringPacks !== 1 ? 's' : ''} por vencer
+            </Link>
+          )}
+          {cancellations.length > 0 && (
+            <a
+              href="#cancelaciones"
+              className="inline-flex items-center gap-1.5 text-xs font-bold px-3 py-2 rounded-full bg-rose-50 text-rose-700 border border-rose-200 hover:bg-rose-100 transition-colors"
+            >
+              <Bell size={13} />
+              {cancellations.length} cancelaci{cancellations.length !== 1 ? 'ones' : 'ón'} sin leer
+            </a>
+          )}
+          {isAdminOrTI && (
+            <span className="inline-flex items-center gap-1.5 text-xs font-bold px-3 py-2 rounded-full bg-slate-100 text-slate-500 border border-slate-200">
+              <Package size={13} />
+              Inventario: {currency(stats.inventoryValue)}
+            </span>
+          )}
         </div>
       )}
+      </>}
 
+      {/* ── Gráficas ── */}
       {isLoading ? <SkeletonCharts /> : <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
         <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100">
-          <h3 className="font-bold text-slate-700 mb-6">Sesiones Efectuadas por Especialista</h3>
+          <h3 className="font-bold text-slate-700 mb-6">Sesiones realizadas por especialista · {MONTHS[selectedMonth]}</h3>
           <div className="h-64">
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={chartData}>
                 <CartesianGrid strokeDasharray="3 3" vertical={false} />
                 <XAxis dataKey="name" axisLine={false} tickLine={false} />
-                <YAxis axisLine={false} tickLine={false} />
+                <YAxis axisLine={false} tickLine={false} allowDecimals={false} />
                 <Tooltip cursor={{ fill: '#f8fafc' }} />
                 <Bar dataKey="sesiones" fill="#3b82f6" radius={[4, 4, 0, 0]} barSize={40} />
               </BarChart>
@@ -208,27 +406,39 @@ const Dashboard: React.FC = () => {
         </div>
 
         <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100 flex flex-col items-center justify-center">
-          <h3 className="font-bold text-slate-700 mb-6 self-start text-sm uppercase tracking-wider">Estado de Sesiones</h3>
-          <PieChart width={250} height={200}>
-            <Pie
-              data={[
-                { name: 'Efectuadas',       value: stats.doneSessions },
-                { name: 'Pendientes/Otras', value: Math.max(0, stats.totalSessions - stats.doneSessions) },
-              ]}
-              innerRadius={60} outerRadius={80} dataKey="value" paddingAngle={5}
-            >
-              {COLORS.map((color, i) => <Cell key={i} fill={color} />)}
-            </Pie>
-            <Tooltip />
-          </PieChart>
-          <div className="flex gap-4 mt-4">
-            <div className="flex items-center gap-1"><div className="w-3 h-3 bg-emerald-500 rounded-full"/><span className="text-[10px] font-bold text-slate-500 uppercase">Efectuadas</span></div>
-            <div className="flex items-center gap-1"><div className="w-3 h-3 bg-blue-500 rounded-full"/><span className="text-[10px] font-bold text-slate-500 uppercase">Otras</span></div>
-          </div>
+          <h3 className="font-bold text-slate-700 mb-6 self-start text-sm uppercase tracking-wider">
+            Estados de sesiones · {MONTHS[selectedMonth]}
+          </h3>
+          {statusData.length === 0 ? (
+            <p className="text-sm text-slate-400 py-12">Sin sesiones registradas este mes.</p>
+          ) : (
+            <>
+              <PieChart width={250} height={200}>
+                <Pie
+                  data={statusData}
+                  innerRadius={60} outerRadius={80} dataKey="value" paddingAngle={4}
+                >
+                  {statusData.map((entry) => (
+                    <Cell key={entry.name} fill={STATUS_COLORS[entry.name] ?? '#94a3b8'} />
+                  ))}
+                </Pie>
+                <Tooltip />
+              </PieChart>
+              <div className="flex flex-wrap gap-3 mt-4 justify-center">
+                {statusData.map(entry => (
+                  <div key={entry.name} className="flex items-center gap-1">
+                    <div className="w-3 h-3 rounded-full" style={{ backgroundColor: STATUS_COLORS[entry.name] ?? '#94a3b8' }} />
+                    <span className="text-[10px] font-bold text-slate-500 uppercase">{entry.name} ({entry.value})</span>
+                  </div>
+                ))}
+              </div>
+            </>
+          )}
         </div>
       </div>}
 
-      <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100">
+      {/* ── Cancelaciones recientes ── */}
+      <div id="cancelaciones" className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100">
         <div className="flex items-center justify-between gap-3 mb-4">
           <h3 className="font-bold text-slate-700">Cancelaciones recientes</h3>
           <span className="text-xs font-bold bg-rose-100 text-rose-700 px-2.5 py-1 rounded-full">
@@ -268,6 +478,7 @@ const Dashboard: React.FC = () => {
         )}
       </div>
 
+      {/* ── Análisis IA ── */}
       {analysis && (
         <div className="bg-gradient-to-br from-slate-900 to-slate-800 rounded-3xl p-8 text-white shadow-xl animate-in fade-in duration-700">
           <div className="flex items-center gap-3 mb-4 text-blue-400">
