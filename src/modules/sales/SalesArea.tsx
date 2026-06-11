@@ -780,6 +780,17 @@ const RegisterSaleModal: React.FC<RegisterSaleModalProps> = ({
   const total = unitPrice * qty;
   const canSubmit = selectedPatient && itemName && unitPrice > 0 && date;
 
+  // Qué falta para poder registrar — se muestra junto al botón deshabilitado
+  const missingReason = !selectedPatient
+    ? 'Falta seleccionar el paciente.'
+    : !itemName
+      ? (type === 'service' ? 'Falta seleccionar el servicio.' : 'Falta seleccionar el producto.')
+      : unitPrice <= 0
+        ? 'El precio debe ser mayor a 0.'
+        : !date
+          ? 'Falta la fecha.'
+          : null;
+
   // Producto seleccionado y aviso de stock insuficiente
   const selectedProduct = type === 'product' && itemId
     ? products.find(p => p.id === itemId) ?? null
@@ -1121,17 +1132,26 @@ const RegisterSaleModal: React.FC<RegisterSaleModalProps> = ({
         </div>
 
         {/* Footer */}
-        <div className="px-6 py-4 border-t border-slate-100 flex justify-end gap-2 shrink-0">
-          <button onClick={onClose} className="px-4 py-2 rounded-xl border border-slate-200 text-sm font-semibold text-slate-600 hover:bg-slate-50 transition-colors">
-            Cancelar
-          </button>
-          <button
-            onClick={handleSubmit}
-            disabled={!canSubmit || submitting}
-            className="px-5 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold disabled:opacity-50 transition-colors"
-          >
-            {submitting ? 'Guardando...' : 'Registrar venta'}
-          </button>
+        <div className="px-6 py-4 border-t border-slate-100 flex items-center justify-between gap-3 shrink-0">
+          {/* Motivo por el que el botón está deshabilitado */}
+          {missingReason ? (
+            <p className="text-xs text-amber-600 font-medium flex items-center gap-1.5 min-w-0">
+              <AlertTriangle size={13} className="shrink-0" />
+              <span className="truncate">{missingReason}</span>
+            </p>
+          ) : <span />}
+          <div className="flex gap-2 shrink-0">
+            <button onClick={onClose} className="px-4 py-2 rounded-xl border border-slate-200 text-sm font-semibold text-slate-600 hover:bg-slate-50 transition-colors">
+              Cancelar
+            </button>
+            <button
+              onClick={handleSubmit}
+              disabled={!canSubmit || submitting}
+              className="px-5 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold disabled:opacity-50 transition-colors"
+            >
+              {submitting ? 'Guardando...' : 'Registrar venta'}
+            </button>
+          </div>
         </div>
       </div>
     </div>
