@@ -786,6 +786,14 @@ const RegisterSaleModal: React.FC<RegisterSaleModalProps> = ({
     : null;
   const stockShortage = selectedProduct !== null && qty > (selectedProduct.stock ?? 0);
 
+  // Buscador propio de la lista de productos
+  const [productSearch, setProductSearch] = useState('');
+  const filteredProducts = useMemo(() => {
+    const q = productSearch.trim().toLowerCase();
+    if (!q) return products;
+    return products.filter(p => p.name.toLowerCase().includes(q));
+  }, [products, productSearch]);
+
   // Al cambiar tipo, limpiar selección de ítem
   const handleTypeChange = (t: 'service' | 'product') => {
     setType(t);
@@ -793,6 +801,7 @@ const RegisterSaleModal: React.FC<RegisterSaleModalProps> = ({
     setItemId('');
     setUnitPrice(0);
     setQty(1);
+    setProductSearch('');
     // Resetear vigencia al cambiar de tipo
     setValidOnlyToday(true);
     setValidFrom(TODAY);
@@ -933,8 +942,35 @@ const RegisterSaleModal: React.FC<RegisterSaleModalProps> = ({
           ) : (
             <div>
               <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2">Producto</p>
+
+              {/* Buscador de productos */}
+              <div className="relative mb-2">
+                <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+                <input
+                  type="text"
+                  placeholder="Buscar producto..."
+                  value={productSearch}
+                  onChange={e => setProductSearch(e.target.value)}
+                  className="w-full pl-8 pr-8 py-2 rounded-xl border border-slate-200 focus:border-amber-400 focus:ring-2 focus:ring-amber-100 outline-none text-sm"
+                />
+                {productSearch && (
+                  <button
+                    type="button"
+                    onClick={() => setProductSearch('')}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+                  >
+                    <X size={13} />
+                  </button>
+                )}
+              </div>
+
               <div className="space-y-1.5 max-h-40 overflow-y-auto pr-1">
-                {products.map(p => {
+                {filteredProducts.length === 0 && (
+                  <p className="text-sm text-slate-400 text-center py-3">
+                    No hay productos que coincidan con "{productSearch}".
+                  </p>
+                )}
+                {filteredProducts.map(p => {
                   const stock = p.stock ?? 0;
                   return (
                     <button
