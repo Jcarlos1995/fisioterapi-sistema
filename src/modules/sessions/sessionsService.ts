@@ -8,13 +8,39 @@ import { db } from '../../lib/firebase';
 import { Session, Patient } from '../../types';
 import { writeAuditLog } from '../../shared/utils/auditLogger';
 
-/** Escucha en tiempo real la colección de sesiones. */
-export function subscribeToSessions(
+/**
+ * Escucha las sesiones de HOY en adelante (la agenda vigente).
+ * Rango sobre un solo campo — índice simple, sin compuestos.
+ * El orden cronológico fino (fecha + hora) se resuelve en el cliente.
+ */
+export function subscribeToUpcomingSessions(
+  fromDate: string,
   onData:  (sessions: Session[]) => void,
   onError: (err: Error) => void,
 ): Unsubscribe {
   return onSnapshot(
-    collection(db, 'sessions'),
+    query(collection(db, 'sessions'), where('date', '>=', fromDate)),
+    (snap) => onData(snap.docs.map(d => ({ id: d.id, ...d.data() }) as Session)),
+    onError,
+  );
+}
+
+/**
+ * Escucha las sesiones de un mes concreto (historial).
+ * Filtra por rango de date (no por yearMonth) para incluir también
+ * documentos antiguos que pudieran no tener ese campo.
+ */
+export function subscribeToSessionsByMonth(
+  yearMonth: string,
+  onData:  (sessions: Session[]) => void,
+  onError: (err: Error) => void,
+): Unsubscribe {
+  return onSnapshot(
+    query(
+      collection(db, 'sessions'),
+      where('date', '>=', `${yearMonth}-01`),
+      where('date', '<=', `${yearMonth}-31`),
+    ),
     (snap) => onData(snap.docs.map(d => ({ id: d.id, ...d.data() }) as Session)),
     onError,
   );

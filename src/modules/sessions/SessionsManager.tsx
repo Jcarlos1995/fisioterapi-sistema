@@ -1,5 +1,9 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { CalendarDays, Plus, Trash2, Clock, UserSquare2, AlertTriangle, WifiOff, ChevronLeft, ChevronRight } from 'lucide-react';
+import {
+  Plus, Trash2, UserSquare2, AlertTriangle, WifiOff,
+  ChevronLeft, ChevronRight, CalendarDays, Search, X,
+  MessageCircle, Calendar, History,
+} from 'lucide-react';
 import { Session, Patient, Professional } from '../../types';
 import { useAuth } from '../../context/AuthContext';
 import { useToast } from '../../context/ToastContext';
@@ -8,7 +12,8 @@ import ConfirmModal from '../../shared/components/ConfirmModal';
 import { isToday, shouldAutoCreateSale, shouldWarnOnLeave, statusBadgeClass } from '../../shared/utils/session';
 import { SkeletonHeader, SkeletonSessionCards } from '../../shared/components/SkeletonLoader';
 import {
-  subscribeToSessions, fetchServicePrices, saleExistsForSession,
+  subscribeToUpcomingSessions, subscribeToSessionsByMonth,
+  fetchServicePrices, saleExistsForSession,
   createAutoSale, updateSessionStatus, createSession, deleteSession,
 } from './sessionsService';
 import { subscribeToPatients } from '../patients/patientsService';
@@ -23,9 +28,13 @@ interface PendingChange {
   hasSale: boolean;
 }
 
-// ─── Constantes ───────────────────────────────────────────────────────────────
+type AgendaTab = 'agenda' | 'history';
 
-const PAGE_SIZE = 8;
+// ─── Constantes y helpers ─────────────────────────────────────────────────────
+
+const PAGE_SIZE = 10;
+
+const TODAY = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Lima' });
 
 const STATUS_FILTERS = [
   { label: 'Todas',      value: 'all' },
@@ -38,11 +47,63 @@ const STATUS_FILTERS = [
 
 type StatusFilter = typeof STATUS_FILTERS[number]['value'];
 
+function currentMonthKey(): string {
+  return TODAY.substring(0, 7);
+}
+
+/** Suma días a una fecha YYYY-MM-DD. */
+function shiftDate(dateStr: string, days: number): string {
+  const d = new Date(`${dateStr}T12:00:00`);
+  d.setDate(d.getDate() + days);
+  return d.toISOString().split('T')[0];
+}
+
+/** "jueves 12 de junio" */
+function formatDayLong(dateStr: string): string {
+  try {
+    return new Date(`${dateStr}T12:00:00-05:00`).toLocaleDateString('es-PE', {
+      weekday: 'long', day: 'numeric', month: 'long',
+    });
+  } catch { return dateStr; }
+}
+
+/** Encabezado de grupo: "Hoy · jueves 12 de junio", "Mañana · ...", o el día capitalizado. */
+function dayHeader(dateStr: string): string {
+  const label = formatDayLong(dateStr);
+  if (dateStr === TODAY) return `Hoy · ${label}`;
+  if (dateStr === shiftDate(TODAY, 1)) return `Mañana · ${label}`;
+  return label.charAt(0).toUpperCase() + label.slice(1);
+}
+
+function formatMonthLabel(monthKey: string): string {
+  const [y, m] = monthKey.split('-');
+  return new Date(Number(y), Number(m) - 1, 1).toLocaleDateString('es-PE', {
+    month: 'long', year: 'numeric',
+  });
+}
+
+/** Link de WhatsApp con recordatorio de cita prellenado. */
+function waReminderLink(phone: string, patientName: string, session: Session): string {
+  const digits = phone.replace(/\D/g, '');
+  const full = digits.length === 9 ? `51${digits}` : digits;
+  const firstName = patientName.split(' ')[0];
+  const dayLabel = session.date === TODAY
+    ? 'hoy'
+    : session.date === shiftDate(TODAY, 1)
+      ? `mañana ${formatDayLong(session.date)}`
+      : `el ${formatDayLong(session.date)}`;
+  const msg = `Hola ${firstName}, te recordamos tu cita de ${session.therapyType} ${dayLabel} a las ${session.time} en Fisioterapi Chepén (Av. Manuel Seoane 259). Por favor confirma tu asistencia. ¡Gracias!`;
+  return `https://wa.me/${full}?text=${encodeURIComponent(msg)}`;
+}
+
 // ─── Componente ───────────────────────────────────────────────────────────────
 
 const SessionsManager: React.FC = () => {
   const { user, isTI, permissions } = useAuth();
   const { showToast } = useToast();
+
+  const [activeTab,    setActiveTab]    = useState<AgendaTab>('agenda');
+  const [historyMonth, setHistoryMonth] = useState(currentMonthKey());
 
   const [sessions,      setSessions]      = useState<Session[]>([]);
   const [patients,      setPatients]      = useState<Patient[]>([]);
@@ -53,6 +114,7 @@ const SessionsManager: React.FC = () => {
   const [loadError,       setLoadError]       = useState<string | null>(null);
   const [isLoading,       setIsLoading]       = useState(true);
   const [statusFilter,    setStatusFilter]    = useState<StatusFilter>('all');
+  const [patientSearch,   setPatientSearch]   = useState('');
   const [currentPage,     setCurrentPage]     = useState(1);
   const [isModalOpen,     setIsModalOpen]     = useState(false);
   const [formError,       setFormError]       = useState<string | null>(null);
@@ -73,18 +135,32 @@ const SessionsManager: React.FC = () => {
     notes: '',
   });
 
-  // ── Carga de datos ───────────────────────────────────────────────────────────
-  useEffect(() => {
-    const onErr = (label: string) => (err: Error) => {
-      console.error(`onSnapshot [${label}]:`, err);
-      setLoadError('No se pudieron cargar los datos. Verifica tu conexión e intenta de nuevo.');
-    };
+  // Buscador de paciente dentro del modal
+  const [modalPatientSearch, setModalPatientSearch] = useState('');
+  const [showPatientDropdown, setShowPatientDropdown] = useState(false);
 
-    const unsubSessions      = subscribeToSessions(
-      (data) => { setLoadError(null); setIsLoading(false); setSessions(data); },
-      onErr('sessions'),
-    );
-    const unsubPatients      = subscribeToPatients(
+  const onErr = (label: string) => (err: Error) => {
+    console.error(`onSnapshot [${label}]:`, err);
+    setLoadError('No se pudieron cargar los datos. Verifica tu conexión e intenta de nuevo.');
+  };
+
+  // ── Sesiones: la suscripción depende de la pestaña activa ───────────────────
+  useEffect(() => {
+    setIsLoading(true);
+    const onData = (data: Session[]) => {
+      setLoadError(null);
+      setIsLoading(false);
+      setSessions(data);
+    };
+    return activeTab === 'agenda'
+      ? subscribeToUpcomingSessions(TODAY, onData, onErr('sessions-agenda'))
+      : subscribeToSessionsByMonth(historyMonth, onData, onErr('sessions-history'));
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTab, historyMonth]);
+
+  // ── Pacientes y profesionales ────────────────────────────────────────────────
+  useEffect(() => {
+    const unsubPatients = subscribeToPatients(
       (data) => setPatients(data),
       onErr('patients'),
     );
@@ -92,10 +168,11 @@ const SessionsManager: React.FC = () => {
       (data) => setProfessionals(data),
       onErr('professionals'),
     );
-    return () => { unsubSessions(); unsubPatients(); unsubProfessionals(); };
+    return () => { unsubPatients(); unsubProfessionals(); };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Precios de servicios
+  // Precios de servicios (para la venta automática)
   useEffect(() => {
     fetchServicePrices().then(setServicePrices);
   }, []);
@@ -109,8 +186,9 @@ const SessionsManager: React.FC = () => {
   }, [user?.email]);
 
   // ── Helpers ──────────────────────────────────────────────────────────────────
-  const getPatientName = (id: string) => patients.find(p => p.id === id)?.name || 'Paciente no encontrado';
-  const getProfName    = (id: string) => professionals.find(p => p.id === id)?.name || 'Especialista no encontrado';
+  const getPatientName  = (id: string) => patients.find(p => p.id === id)?.name || 'Paciente no encontrado';
+  const getPatientPhone = (id: string) => patients.find(p => p.id === id)?.phone || '';
+  const getProfName     = (id: string) => professionals.find(p => p.id === id)?.name || 'Especialista no encontrado';
 
   /** Verifica si ya existe una venta ligada a esta sesión */
   const checkSaleExists = (sessionId: string) => saleExistsForSession(sessionId);
@@ -162,7 +240,14 @@ const SessionsManager: React.FC = () => {
     }
   };
 
-  // ── Agregar sesión ───────────────────────────────────────────────────────────
+  // ── Crear sesión ─────────────────────────────────────────────────────────────
+  const closeModal = () => {
+    setIsModalOpen(false);
+    setFormError(null);
+    setModalPatientSearch('');
+    setShowPatientDropdown(false);
+  };
+
   const handleAdd = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newSession.patientId || !newSession.professionalId) {
@@ -171,17 +256,45 @@ const SessionsManager: React.FC = () => {
     }
     if (!newSession.date) { setFormError('Por favor selecciona una fecha.'); return; }
     if (!newSession.time) { setFormError('Por favor selecciona una hora.'); return; }
+    if (newSession.time < '08:00' || newSession.time > '20:00') {
+      setFormError('El horario de atención es de 08:00 a 20:00.');
+      return;
+    }
     setFormError(null);
     try {
       const patientName = patients.find(p => p.id === newSession.patientId)?.name;
       await createSession(newSession, user, patientName);
-      setIsModalOpen(false);
+      closeModal();
       setNewSession({ patientId: '', professionalId: '', date: '', time: '', therapyType: '', status: 'Programada', notes: '' });
       showToast('Cita agendada');
     } catch (error) {
       console.error('Error al agendar sesión:', error);
     }
   };
+
+  // Aviso de conflicto: mismo profesional, misma fecha y hora (no bloquea)
+  const scheduleConflict = useMemo(() => {
+    if (!newSession.professionalId || !newSession.date || !newSession.time) return null;
+    const clash = sessions.find(s =>
+      s.professionalId === newSession.professionalId &&
+      s.date === newSession.date &&
+      s.time === newSession.time &&
+      s.status !== 'Cancelada'
+    );
+    return clash ? getPatientName(clash.patientId) : null;
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [newSession.professionalId, newSession.date, newSession.time, sessions, patients]);
+
+  // Pacientes filtrados para el dropdown del modal
+  const modalFilteredPatients = useMemo(() => {
+    if (!modalPatientSearch.trim()) return [];
+    const q = modalPatientSearch.toLowerCase();
+    return patients
+      .filter(p => p.name.toLowerCase().includes(q) || (p.dni || '').includes(q))
+      .slice(0, 6);
+  }, [patients, modalPatientSearch]);
+
+  const selectedModalPatient = patients.find(p => p.id === newSession.patientId) ?? null;
 
   // ── Eliminar sesión ──────────────────────────────────────────────────────────
   const handleDelete = (id: string) => setConfirmDeleteId(id);
@@ -195,25 +308,48 @@ const SessionsManager: React.FC = () => {
     showToast('Cita eliminada');
   };
 
-  // ── Filtrado, ordenamiento y paginación ──────────────────────────────────────
+  // ── Filtrado, ordenamiento, agrupación y paginación ──────────────────────────
   const filtered = useMemo(() => {
-    const base = statusFilter === 'all'
-      ? sessions
-      : sessions.filter(s => s.status === statusFilter);
-    // Ordenar: hoy primero, luego más recientes
+    const term = patientSearch.trim().toLowerCase();
+    const base = sessions.filter(s =>
+      (statusFilter === 'all' || s.status === statusFilter) &&
+      (!term || getPatientName(s.patientId).toLowerCase().includes(term))
+    );
+    // Agenda: cronológico ascendente (hoy → mañana → ...)
+    // Historial: descendente (lo más reciente primero)
     return [...base].sort((a, b) => {
-      const aHoy = isToday(a.date) ? 0 : 1;
-      const bHoy = isToday(b.date) ? 0 : 1;
-      if (aHoy !== bHoy) return aHoy - bHoy;
-      return b.date.localeCompare(a.date) || b.time.localeCompare(a.time);
+      const keyA = `${a.date}${a.time}`;
+      const keyB = `${b.date}${b.time}`;
+      return activeTab === 'agenda' ? keyA.localeCompare(keyB) : keyB.localeCompare(keyA);
     });
-  }, [sessions, statusFilter]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sessions, statusFilter, patientSearch, activeTab, patients]);
 
-  const totalPages  = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
-  const safePage    = Math.min(currentPage, totalPages);
-  const paginated   = filtered.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE);
+  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
+  const safePage   = Math.min(currentPage, totalPages);
+  // La agenda se muestra completa (acotada por naturaleza); el historial se pagina
+  const visible    = activeTab === 'agenda'
+    ? filtered
+    : filtered.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE);
+
+  // Agrupar por día (el orden ya viene resuelto)
+  const groupedByDay = useMemo(() => {
+    const groups = new Map<string, Session[]>();
+    visible.forEach(s => {
+      const arr = groups.get(s.date) ?? [];
+      arr.push(s);
+      groups.set(s.date, arr);
+    });
+    return Array.from(groups.entries());
+  }, [visible]);
 
   const changeFilter = (f: StatusFilter) => { setStatusFilter(f); setCurrentPage(1); };
+  const changeTab = (tab: AgendaTab) => {
+    setActiveTab(tab);
+    setStatusFilter('all');
+    setPatientSearch('');
+    setCurrentPage(1);
+  };
 
   // ─────────────────────────────────────────────────────────────────────────────
   return (
@@ -279,12 +415,6 @@ const SessionsManager: React.FC = () => {
         </div>
       )}
 
-      {isLoading ? (
-        <div className="space-y-4">
-          <SkeletonHeader />
-          <SkeletonSessionCards rows={8} />
-        </div>
-      ) : <>
       {/* Cabecera */}
       <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-3">
         <div>
@@ -301,11 +431,73 @@ const SessionsManager: React.FC = () => {
         )}
       </div>
 
-      {/* Contenedor principal con marco */}
-      <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+      {/* Pestañas: Agenda | Historial */}
+      <div className="flex items-center justify-between flex-wrap gap-3 border-b border-slate-200">
+        <div className="flex gap-1">
+          <button
+            onClick={() => changeTab('agenda')}
+            className={`inline-flex items-center gap-1.5 px-4 py-2.5 text-sm font-semibold transition-colors border-b-2 -mb-px ${
+              activeTab === 'agenda'
+                ? 'border-indigo-600 text-indigo-700'
+                : 'border-transparent text-slate-400 hover:text-slate-600'
+            }`}
+          >
+            <Calendar size={15} />
+            Agenda
+            {activeTab === 'agenda' && !isLoading && (
+              <span className="text-xs font-bold px-1.5 py-0.5 rounded-full bg-indigo-50 text-indigo-600">
+                {filtered.length}
+              </span>
+            )}
+          </button>
+          <button
+            onClick={() => changeTab('history')}
+            className={`inline-flex items-center gap-1.5 px-4 py-2.5 text-sm font-semibold transition-colors border-b-2 -mb-px ${
+              activeTab === 'history'
+                ? 'border-indigo-600 text-indigo-700'
+                : 'border-transparent text-slate-400 hover:text-slate-600'
+            }`}
+          >
+            <History size={15} />
+            Historial
+          </button>
+        </div>
 
-        {/* Filtros por estado */}
-        <div className="px-4 pt-4 pb-3 border-b border-slate-100 flex items-center gap-2 flex-wrap">
+        {/* Selector de mes — solo en historial */}
+        {activeTab === 'history' && (
+          <div className="flex items-center gap-2 bg-white border border-slate-200 rounded-xl px-3 py-1.5 shadow-sm mb-1">
+            <Calendar size={14} className="text-slate-400 shrink-0" />
+            <input
+              type="month"
+              value={historyMonth}
+              max={currentMonthKey()}
+              onChange={e => { setHistoryMonth(e.target.value); setCurrentPage(1); }}
+              className="text-sm outline-none bg-transparent text-slate-700 font-medium"
+            />
+          </div>
+        )}
+      </div>
+
+      {isLoading ? (
+        <div className="space-y-4">
+          <SkeletonHeader />
+          <SkeletonSessionCards rows={8} />
+        </div>
+      ) : <>
+
+      {/* Buscador + filtros por estado */}
+      <div className="flex flex-wrap gap-3 items-center">
+        <div className="relative flex-1 min-w-48">
+          <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+          <input
+            type="text"
+            placeholder="Buscar paciente..."
+            value={patientSearch}
+            onChange={e => { setPatientSearch(e.target.value); setCurrentPage(1); }}
+            className="w-full pl-9 pr-4 py-2 rounded-xl bg-white border border-slate-200 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100 outline-none text-sm shadow-sm"
+          />
+        </div>
+        <div className="flex items-center gap-2 flex-wrap">
           {STATUS_FILTERS.map(f => (
             <button
               key={f.value}
@@ -317,148 +509,163 @@ const SessionsManager: React.FC = () => {
               }`}
             >
               {f.label}
-              {f.value !== 'all' && (
-                <span className={`ml-1.5 ${statusFilter === f.value ? 'opacity-80' : 'opacity-60'}`}>
-                  ({sessions.filter(s => s.status === f.value).length})
-                </span>
-              )}
-              {f.value === 'all' && (
-                <span className={`ml-1.5 ${statusFilter === f.value ? 'opacity-80' : 'opacity-60'}`}>
-                  ({sessions.length})
-                </span>
-              )}
+              <span className={`ml-1.5 ${statusFilter === f.value ? 'opacity-80' : 'opacity-60'}`}>
+                ({f.value === 'all' ? sessions.length : sessions.filter(s => s.status === f.value).length})
+              </span>
             </button>
           ))}
         </div>
-
-        {/* Lista de sesiones */}
-        <div className="p-4 space-y-3 min-h-[320px]">
-          {paginated.length === 0 ? (
-            /* Estado vacío */
-            <div className="flex flex-col items-center justify-center py-16 text-center gap-4">
-              <div className="w-16 h-16 bg-indigo-50 rounded-2xl flex items-center justify-center">
-                <CalendarDays size={32} className="text-indigo-300" />
-              </div>
-              <div>
-                <p className="font-semibold text-slate-600">
-                  {statusFilter === 'all' ? 'No hay citas registradas' : `No hay citas con estado "${statusFilter}"`}
-                </p>
-                <p className="text-sm text-slate-400 mt-1">
-                  {statusFilter === 'all'
-                    ? 'Usa el botón "Agendar Cita" para crear la primera.'
-                    : 'Prueba cambiando el filtro de estado.'}
-                </p>
-              </div>
-            </div>
-          ) : (
-            paginated.map((session) => {
-              const esHoy = isToday(session.date);
-              return (
-                <div
-                  key={session.id}
-                  className={`relative p-4 sm:p-5 rounded-xl border-2 transition-all duration-300 flex flex-col sm:flex-row sm:flex-wrap sm:items-center sm:justify-between gap-3 ${
-                    esHoy
-                      ? 'border-rose-400 bg-rose-50/40 ring-1 ring-rose-200'
-                      : 'border-slate-100 hover:border-slate-200 hover:shadow-sm'
-                  }`}
-                >
-                  {esHoy && (
-                    <div className="absolute -top-3 left-5 bg-rose-600 text-white text-[10px] font-black px-3 py-1 rounded-full uppercase tracking-widest shadow-md">
-                      Cita para Hoy
-                    </div>
-                  )}
-
-                  <div className="flex items-center gap-4 flex-1 min-w-[200px]">
-                    <div className={`${esHoy ? 'bg-rose-600 text-white shadow-lg' : 'bg-indigo-50 text-indigo-600'} p-3 rounded-full transition-colors shrink-0`}>
-                      <CalendarDays size={22} />
-                    </div>
-                    <div>
-                      <h4 className={`font-bold ${esHoy ? 'text-rose-900' : 'text-slate-800'}`}>
-                        {getPatientName(session.patientId)}
-                      </h4>
-                      <div className="flex items-center gap-2 text-xs text-slate-500 font-medium uppercase tracking-wider mt-0.5">
-                        <UserSquare2 size={11} /> {getProfName(session.professionalId)}
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="flex items-center gap-4 text-sm flex-wrap">
-                    <div className={`flex items-center gap-2 font-medium ${esHoy ? 'text-rose-700' : 'text-slate-600'}`}>
-                      <Clock size={15} /> {session.date} · {session.time}
-                    </div>
-                    <div className={`font-bold px-3 py-1 rounded-lg text-xs ${esHoy ? 'bg-rose-100 text-rose-800' : 'bg-slate-100 text-slate-700'}`}>
-                      {session.therapyType}
-                    </div>
-                  </div>
-
-                  <div className="flex items-center gap-3">
-                    {!(isTI || permissions.appointments.edit) ? (
-                      <span className={`text-xs font-bold px-3 py-1.5 rounded-full shadow-sm ${statusBadgeClass(session.status)}`}>
-                        {session.status}
-                      </span>
-                    ) : (
-                      <select
-                        value={session.status}
-                        onChange={e => updateStatus(session, e.target.value as Session['status'])}
-                        className={`text-xs font-bold px-3 py-1.5 rounded-full border-none cursor-pointer shadow-sm ${statusBadgeClass(session.status)}`}
-                      >
-                        <option value="Programada">Programada</option>
-                        <option value="Confirmada">Confirmada</option>
-                        <option value="Efectuada">Efectuada</option>
-                        <option value="Pagada">Pagada</option>
-                        <option value="Cancelada">Cancelada</option>
-                      </select>
-                    )}
-                    {(isTI || permissions.appointments.delete) && (
-                      <button onClick={() => handleDelete(session.id)} className="text-slate-300 hover:text-rose-500 p-2 transition-colors">
-                        <Trash2 size={17} />
-                      </button>
-                    )}
-                  </div>
-                </div>
-              );
-            })
-          )}
-        </div>
-
-        {/* Paginación */}
-        {totalPages > 1 && (
-          <div className="px-4 py-3 border-t border-slate-100 flex items-center justify-between gap-2">
-            <span className="text-xs text-slate-400 font-medium">
-              {filtered.length} citas · página {safePage} de {totalPages}
-            </span>
-            <div className="flex items-center gap-1">
-              <button
-                onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
-                disabled={safePage === 1}
-                className="w-8 h-8 flex items-center justify-center rounded-lg border border-slate-200 text-slate-500 hover:bg-slate-50 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
-              >
-                <ChevronLeft size={16} />
-              </button>
-              {Array.from({ length: totalPages }, (_, i) => i + 1).map(p => (
-                <button
-                  key={p}
-                  onClick={() => setCurrentPage(p)}
-                  className={`w-8 h-8 rounded-lg text-xs font-bold transition-colors ${
-                    p === safePage
-                      ? 'bg-indigo-600 text-white shadow-md'
-                      : 'border border-slate-200 text-slate-500 hover:bg-slate-50'
-                  }`}
-                >
-                  {p}
-                </button>
-              ))}
-              <button
-                onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
-                disabled={safePage === totalPages}
-                className="w-8 h-8 flex items-center justify-center rounded-lg border border-slate-200 text-slate-500 hover:bg-slate-50 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
-              >
-                <ChevronRight size={16} />
-              </button>
-            </div>
-          </div>
-        )}
       </div>
+
+      {/* Lista agrupada por día */}
+      {groupedByDay.length === 0 ? (
+        <div className="bg-white rounded-2xl border border-slate-200 shadow-sm flex flex-col items-center justify-center py-16 text-center gap-4">
+          <div className="w-16 h-16 bg-indigo-50 rounded-2xl flex items-center justify-center">
+            <CalendarDays size={32} className="text-indigo-300" />
+          </div>
+          <div>
+            <p className="font-semibold text-slate-600">
+              {patientSearch.trim()
+                ? 'No hay citas que coincidan con la búsqueda.'
+                : activeTab === 'agenda'
+                  ? statusFilter === 'all' ? 'No hay citas próximas' : `No hay citas próximas con estado "${statusFilter}"`
+                  : `Sin citas en ${formatMonthLabel(historyMonth)}`}
+            </p>
+            <p className="text-sm text-slate-400 mt-1">
+              {activeTab === 'agenda'
+                ? 'Usa el botón "Agendar Cita" para crear una nueva.'
+                : 'Prueba con otro mes o cambia los filtros.'}
+            </p>
+          </div>
+        </div>
+      ) : (
+        <div className="space-y-5">
+          {groupedByDay.map(([day, daySessions]) => {
+            const esHoy = isToday(day);
+            return (
+              <div key={day}>
+                {/* Encabezado del día */}
+                <div className="flex items-center justify-between px-1 mb-2">
+                  <p className={`text-xs font-bold uppercase tracking-wide ${esHoy ? 'text-indigo-600' : 'text-slate-400'}`}>
+                    {dayHeader(day)}
+                  </p>
+                  <p className="text-xs font-semibold text-slate-400">
+                    {daySessions.length} cita{daySessions.length !== 1 ? 's' : ''}
+                  </p>
+                </div>
+
+                <div className="space-y-2">
+                  {daySessions.map((session) => {
+                    const phone = getPatientPhone(session.patientId);
+                    const patientName = getPatientName(session.patientId);
+                    const canRemind = phone && (session.status === 'Programada' || session.status === 'Confirmada');
+                    return (
+                      <div
+                        key={session.id}
+                        className={`bg-white px-4 sm:px-5 py-3.5 flex flex-col sm:flex-row sm:items-center gap-3 sm:gap-4 shadow-sm transition-all rounded-2xl border ${
+                          esHoy
+                            ? 'border-indigo-200 border-l-4 border-l-indigo-500'
+                            : 'border-slate-100 hover:border-slate-200'
+                        }`}
+                      >
+                        {/* Hora */}
+                        <div className="text-center shrink-0 sm:min-w-14">
+                          <p className={`text-base font-bold ${esHoy ? 'text-indigo-700' : 'text-slate-700'}`}>
+                            {session.time}
+                          </p>
+                          <p className="text-[10px] text-slate-300 font-semibold">30 min</p>
+                        </div>
+
+                        {/* Paciente + detalle */}
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-bold text-slate-800 truncate">
+                            {patientName}
+                            {session.type === 'online-booking' && (
+                              <span className="ml-2 text-[10px] font-bold px-2 py-0.5 rounded-full bg-violet-50 text-violet-600 uppercase align-middle">
+                                Web
+                              </span>
+                            )}
+                          </p>
+                          <p className="text-xs text-slate-400 mt-0.5 truncate flex items-center gap-1.5 flex-wrap">
+                            <span className="font-semibold text-slate-500">{session.therapyType}</span>
+                            <span>·</span>
+                            <span className="inline-flex items-center gap-1"><UserSquare2 size={11} />{getProfName(session.professionalId)}</span>
+                            {session.notes && <span className="italic truncate max-w-44" title={session.notes}>· "{session.notes}"</span>}
+                          </p>
+                        </div>
+
+                        {/* Estado + acciones */}
+                        <div className="flex items-center gap-2 shrink-0">
+                          {!(isTI || permissions.appointments.edit) ? (
+                            <span className={`text-xs font-bold px-3 py-1.5 rounded-full shadow-sm ${statusBadgeClass(session.status)}`}>
+                              {session.status}
+                            </span>
+                          ) : (
+                            <select
+                              value={session.status}
+                              onChange={e => updateStatus(session, e.target.value as Session['status'])}
+                              className={`text-xs font-bold px-3 py-1.5 rounded-full border-none cursor-pointer shadow-sm ${statusBadgeClass(session.status)}`}
+                            >
+                              <option value="Programada">Programada</option>
+                              <option value="Confirmada">Confirmada</option>
+                              <option value="Efectuada">Efectuada</option>
+                              <option value="Pagada">Pagada</option>
+                              <option value="Cancelada">Cancelada</option>
+                            </select>
+                          )}
+
+                          {canRemind && (
+                            <a
+                              href={waReminderLink(phone, patientName, session)}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              title="Enviar recordatorio por WhatsApp"
+                              className="p-2 rounded-lg text-emerald-500 hover:bg-emerald-50 transition-colors"
+                            >
+                              <MessageCircle size={17} />
+                            </a>
+                          )}
+
+                          {(isTI || permissions.appointments.delete) && (
+                            <button onClick={() => handleDelete(session.id)} className="text-slate-300 hover:text-rose-500 p-2 transition-colors" title="Eliminar cita">
+                              <Trash2 size={17} />
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {/* Paginación — solo historial */}
+      {activeTab === 'history' && totalPages > 1 && (
+        <div className="flex items-center justify-center gap-3">
+          <button
+            onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+            disabled={safePage === 1}
+            className="p-2 rounded-lg border border-slate-200 text-slate-500 hover:bg-slate-50 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+            aria-label="Página anterior"
+          >
+            <ChevronLeft size={16} />
+          </button>
+          <span className="text-xs text-slate-400 font-medium">
+            {filtered.length} citas · página {safePage} de {totalPages}
+          </span>
+          <button
+            onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+            disabled={safePage === totalPages}
+            className="p-2 rounded-lg border border-slate-200 text-slate-500 hover:bg-slate-50 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+            aria-label="Página siguiente"
+          >
+            <ChevronRight size={16} />
+          </button>
+        </div>
+      )}
 
       {/* Modal nueva cita */}
       {isModalOpen && (
@@ -466,17 +673,58 @@ const SessionsManager: React.FC = () => {
           <div className="bg-white rounded-3xl p-8 w-full max-w-lg shadow-2xl overflow-y-auto max-h-[90vh]">
             <h3 className="text-xl font-bold mb-6">Nueva Cita</h3>
             <form onSubmit={handleAdd} className="space-y-4">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+
+              {/* Paciente — buscador con dropdown */}
+              <div>
+                <label className="text-xs font-bold text-slate-500 uppercase ml-1">Paciente</label>
+                <div className="relative mt-1">
+                  <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+                  <input
+                    type="text"
+                    placeholder="Buscar por nombre o DNI..."
+                    value={modalPatientSearch}
+                    onChange={e => {
+                      setModalPatientSearch(e.target.value);
+                      setShowPatientDropdown(true);
+                      if (!e.target.value) setNewSession({ ...newSession, patientId: '' });
+                    }}
+                    onFocus={() => setShowPatientDropdown(true)}
+                    className="w-full pl-9 pr-4 p-3 rounded-xl border border-slate-200 focus:ring-2 focus:ring-indigo-500 outline-none text-sm"
+                  />
+                  {showPatientDropdown && modalFilteredPatients.length > 0 && (
+                    <div className="absolute z-10 w-full mt-1 bg-white border border-slate-200 rounded-xl shadow-lg overflow-hidden">
+                      {modalFilteredPatients.map(p => (
+                        <button
+                          key={p.id}
+                          type="button"
+                          onClick={() => {
+                            setNewSession({ ...newSession, patientId: p.id });
+                            setModalPatientSearch(p.name);
+                            setShowPatientDropdown(false);
+                          }}
+                          className="w-full px-4 py-2.5 text-left hover:bg-indigo-50 transition-colors border-b border-slate-100 last:border-0"
+                        >
+                          <p className="text-sm font-semibold text-slate-800">{p.name}</p>
+                          <p className="text-xs text-slate-400">DNI: {p.dni}</p>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+                {selectedModalPatient && (
+                  <div className="mt-2 flex items-center gap-2 text-xs bg-indigo-50 border border-indigo-100 text-indigo-700 px-3 py-1.5 rounded-xl">
+                    <span className="font-semibold">{selectedModalPatient.name}</span>
+                    <span className="text-indigo-400">· DNI {selectedModalPatient.dni}</span>
+                  </div>
+                )}
+              </div>
+
+              {/* Profesional */}
+              <div>
+                <label className="text-xs font-bold text-slate-500 uppercase ml-1">Profesional</label>
                 <select
-                  className="w-full p-3 rounded-xl border border-slate-200"
-                  onChange={e => setNewSession({ ...newSession, patientId: e.target.value })}
-                  required
-                >
-                  <option value="">Seleccionar Paciente</option>
-                  {patients.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
-                </select>
-                <select
-                  className="w-full p-3 rounded-xl border border-slate-200"
+                  className="w-full p-3 mt-1 rounded-xl border border-slate-200 focus:ring-2 focus:ring-indigo-500 outline-none bg-white"
+                  value={newSession.professionalId}
                   onChange={e => setNewSession({ ...newSession, professionalId: e.target.value })}
                   required
                 >
@@ -484,10 +732,47 @@ const SessionsManager: React.FC = () => {
                   {professionals.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
                 </select>
               </div>
+
+              {/* Fecha y hora */}
               <div className="grid grid-cols-2 gap-4">
-                <input required type="date" className="w-full p-3 rounded-xl border border-slate-200" onChange={e => setNewSession({ ...newSession, date: e.target.value })} />
-                <input required type="time" className="w-full p-3 rounded-xl border border-slate-200" onChange={e => setNewSession({ ...newSession, time: e.target.value })} />
+                <div>
+                  <label className="text-xs font-bold text-slate-500 uppercase ml-1">Fecha</label>
+                  <input
+                    required
+                    type="date"
+                    className="w-full p-3 mt-1 rounded-xl border border-slate-200"
+                    value={newSession.date}
+                    onChange={e => setNewSession({ ...newSession, date: e.target.value })}
+                  />
+                </div>
+                <div>
+                  <label className="text-xs font-bold text-slate-500 uppercase ml-1">Hora (08:00–20:00)</label>
+                  <input
+                    required
+                    type="time"
+                    min="08:00"
+                    max="20:00"
+                    step={1800}
+                    className="w-full p-3 mt-1 rounded-xl border border-slate-200"
+                    value={newSession.time}
+                    onChange={e => setNewSession({ ...newSession, time: e.target.value })}
+                  />
+                </div>
               </div>
+
+              {/* Aviso de conflicto de horario */}
+              {scheduleConflict && (
+                <div className="flex items-start gap-2 bg-amber-50 border border-amber-200 text-amber-700 px-3 py-2.5 rounded-xl text-xs font-medium">
+                  <AlertTriangle size={14} className="shrink-0 mt-0.5" />
+                  <span>
+                    {getProfName(newSession.professionalId)} ya tiene una cita con{' '}
+                    <strong>{scheduleConflict}</strong> el {newSession.date} a las {newSession.time}.
+                    Puedes agendar de todos modos si es intencional.
+                  </span>
+                </div>
+              )}
+
+              {/* Tipo de terapia */}
               <div>
                 <label className="text-xs font-bold text-slate-500 uppercase ml-1">Tipo de Terapia</label>
                 <select
@@ -502,14 +787,16 @@ const SessionsManager: React.FC = () => {
                   ))}
                 </select>
               </div>
+
               <textarea
                 placeholder="Notas adicionales..."
                 className="w-full p-3 rounded-xl border border-slate-200 h-24 outline-none focus:ring-2 focus:ring-indigo-500"
+                value={newSession.notes}
                 onChange={e => setNewSession({ ...newSession, notes: e.target.value })}
               />
               {formError && <p className="text-xs text-rose-500 font-medium">{formError}</p>}
               <div className="flex gap-3 pt-4">
-                <button type="button" onClick={() => { setIsModalOpen(false); setFormError(null); }} className="flex-1 py-3 text-slate-500 font-bold">Cancelar</button>
+                <button type="button" onClick={closeModal} className="flex-1 py-3 text-slate-500 font-bold">Cancelar</button>
                 <button type="submit" className="flex-1 py-3 bg-indigo-600 text-white rounded-xl font-bold shadow-lg shadow-indigo-100">Agendar</button>
               </div>
             </form>
