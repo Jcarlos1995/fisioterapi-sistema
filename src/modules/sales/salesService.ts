@@ -1,6 +1,6 @@
 import {
-  collection, addDoc, doc, getDoc, getDocs, setDoc, deleteDoc,
-  onSnapshot, query, where, orderBy, Unsubscribe,
+  collection, addDoc, doc, getDoc, getDocs, setDoc,
+  onSnapshot, query, where, orderBy, runTransaction, Unsubscribe,
 } from 'firebase/firestore';
 import { db } from '../../lib/firebase';
 
@@ -120,21 +120,61 @@ export async function saveServicePrices(prices: Record<string, number>): Promise
   await setDoc(doc(db, 'servicePrices', 'default'), prices, { merge: true });
 }
 
-/** Elimina una venta. */
+/**
+ * Elimina una venta. Si era una venta de producto, restaura el stock
+ * descontado — todo en una transacción atómica.
+ */
 export async function deleteSale(id: string): Promise<void> {
-  await deleteDoc(doc(db, 'sales', id));
+  await runTransaction(db, async (tx) => {
+    const saleRef  = doc(db, 'sales', id);
+    const saleSnap = await tx.get(saleRef);
+
+    if (saleSnap.exists()) {
+      const sale = saleSnap.data() as Sale;
+      if (sale.type === 'product' && sale.itemId) {
+        const prodRef  = doc(db, 'products', sale.itemId);
+        const prodSnap = await tx.get(prodRef);
+        if (prodSnap.exists()) {
+          const current = Number(prodSnap.data().stock) || 0;
+          tx.update(prodRef, { stock: current + (sale.qty || 1) });
+        }
+      }
+    }
+    tx.delete(saleRef);
+  });
 }
 
-/** Crea una venta manual. */
+/**
+ * Crea una venta manual. Si es una venta de producto, descuenta el stock
+ * del inventario en la misma transacción (atómico: venta y descuento se
+ * escriben juntos o no se escribe nada). El stock nunca baja de 0.
+ */
 export async function createSale(
   payload: SalePayload,
   createdByUid: string,
   createdByName: string,
 ): Promise<void> {
-  await addDoc(collection(db, 'sales'), {
+  const saleData = {
     ...payload,
     createdAt: new Date().toISOString(),
     createdByUid,
     createdByName,
-  });
+  };
+
+  if (payload.type === 'product' && payload.itemId) {
+    await runTransaction(db, async (tx) => {
+      const prodRef  = doc(db, 'products', payload.itemId!);
+      const prodSnap = await tx.get(prodRef);
+      const saleRef  = doc(collection(db, 'sales'));
+
+      tx.set(saleRef, saleData);
+      if (prodSnap.exists()) {
+        const current = Number(prodSnap.data().stock) || 0;
+        tx.update(prodRef, { stock: Math.max(0, current - payload.qty) });
+      }
+    });
+    return;
+  }
+
+  await addDoc(collection(db, 'sales'), saleData);
 }

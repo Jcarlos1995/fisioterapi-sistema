@@ -23,6 +23,7 @@ interface PortalProduct {
   name: string;
   category?: string;
   price?: number;
+  stock?: number;
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -153,7 +154,7 @@ const SalesArea: React.FC = () => {
   const [products, setProducts] = useState<PortalProduct[]>([]);
   useEffect(() => {
     return subscribeToProducts(
-      (data) => setProducts(data.map(p => ({ id: p.id, name: p.name, category: p.category, price: p.price }))),
+      (data) => setProducts(data.map(p => ({ id: p.id, name: p.name, category: p.category, price: p.price, stock: p.stock }))),
       (err) => {
         console.error('subscribeToProducts:', err);
         setLoadError('No se pudieron cargar los productos. Verifica tu conexión.');
@@ -779,6 +780,12 @@ const RegisterSaleModal: React.FC<RegisterSaleModalProps> = ({
   const total = unitPrice * qty;
   const canSubmit = selectedPatient && itemName && unitPrice > 0 && date;
 
+  // Producto seleccionado y aviso de stock insuficiente
+  const selectedProduct = type === 'product' && itemId
+    ? products.find(p => p.id === itemId) ?? null
+    : null;
+  const stockShortage = selectedProduct !== null && qty > (selectedProduct.stock ?? 0);
+
   // Al cambiar tipo, limpiar selección de ítem
   const handleTypeChange = (t: 'service' | 'product') => {
     setType(t);
@@ -927,20 +934,29 @@ const RegisterSaleModal: React.FC<RegisterSaleModalProps> = ({
             <div>
               <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2">Producto</p>
               <div className="space-y-1.5 max-h-40 overflow-y-auto pr-1">
-                {products.map(p => (
-                  <button
-                    key={p.id}
-                    onClick={() => handleSelectProduct(p)}
-                    className={`w-full text-left px-3 py-2.5 rounded-xl border text-sm transition-all flex items-center justify-between ${
-                      itemId === p.id
-                        ? 'border-amber-400 bg-amber-50 text-amber-800'
-                        : 'border-slate-200 text-slate-600 hover:border-slate-300 hover:bg-slate-50'
-                    }`}
-                  >
-                    <span className="font-medium truncate">{p.name}</span>
-                    {p.price != null && <span className="text-xs text-slate-400 font-semibold shrink-0 ml-2">S/ {p.price.toFixed(2)}</span>}
-                  </button>
-                ))}
+                {products.map(p => {
+                  const stock = p.stock ?? 0;
+                  return (
+                    <button
+                      key={p.id}
+                      onClick={() => handleSelectProduct(p)}
+                      className={`w-full text-left px-3 py-2.5 rounded-xl border text-sm transition-all flex items-center justify-between ${
+                        itemId === p.id
+                          ? 'border-amber-400 bg-amber-50 text-amber-800'
+                          : 'border-slate-200 text-slate-600 hover:border-slate-300 hover:bg-slate-50'
+                      }`}
+                    >
+                      <span className="font-medium truncate">{p.name}</span>
+                      <span className="text-xs font-semibold shrink-0 ml-2 flex items-center gap-2">
+                        {p.price != null && <span className="text-slate-400">S/ {p.price.toFixed(2)}</span>}
+                        <span className={stock < 5 ? 'text-rose-500 flex items-center gap-0.5' : 'text-slate-400'}>
+                          {stock < 5 && <AlertTriangle size={11} />}
+                          stock: {stock}
+                        </span>
+                      </span>
+                    </button>
+                  );
+                })}
               </div>
             </div>
           )}
@@ -978,6 +994,17 @@ const RegisterSaleModal: React.FC<RegisterSaleModalProps> = ({
               />
             </div>
           </div>
+
+          {/* Aviso de stock insuficiente — no bloquea, el stock nunca baja de 0 */}
+          {stockShortage && selectedProduct && (
+            <div className="flex items-start gap-2 bg-amber-50 border border-amber-200 text-amber-700 px-3 py-2.5 rounded-xl text-xs font-medium">
+              <AlertTriangle size={14} className="shrink-0 mt-0.5" />
+              <span>
+                Solo hay <strong>{selectedProduct.stock ?? 0}</strong> en stock de "{selectedProduct.name}" —
+                esta venta dejará el inventario en 0. Puedes registrarla de todos modos si tienes el producto en mano.
+              </span>
+            </div>
+          )}
 
           {/* Vigencia — solo aplica para servicios */}
           {type === 'service' && <div className="space-y-3">
