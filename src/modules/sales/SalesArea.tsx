@@ -17,6 +17,10 @@ import { subscribeToPatients } from '../patients/patientsService';
 import { subscribeToProducts } from '../products/productsService';
 import { fetchProfessionalByEmail } from '../professionals/professionalsService';
 import { subscribeToTherapyTasks, TherapyTask } from '../daily-therapy/dailyTherapyService';
+import {
+  subscribeToCatalogItems, addCatalogItem, deleteCatalogItem,
+  CatalogItem, CatalogKind,
+} from './catalogService';
 import { THERAPY_TYPES, INSTRUMENTS } from '../../constants';
 
 interface PortalProduct {
@@ -141,15 +145,39 @@ const SalesArea: React.FC = () => {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Catálogo de venta: 5 servicios base (siempre) + tratamientos activos (sin duplicar)
+  // ── Catálogo de ítems agregados desde el gestor de precios ──────────────────
+  const [catalogItems, setCatalogItems] = useState<CatalogItem[]>([]);
+  useEffect(() => {
+    return subscribeToCatalogItems(
+      (data) => setCatalogItems(data),
+      onSnapErr('catalogItems'),
+    );
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Servicios vendibles: 5 base + tratamientos de Terapia Diaria + catálogo (sin duplicar)
   const sellableServices = useMemo(() => {
-    const base = new Set<string>(THERAPY_TYPES);
-    const extras = therapyTasks
-      .filter(t => t.active && !base.has(t.name))
-      .map(t => t.name)
-      .sort((a, b) => a.localeCompare(b));
+    const seen = new Set<string>(THERAPY_TYPES);
+    const extras: string[] = [];
+    therapyTasks.filter(t => t.active).forEach(t => {
+      if (!seen.has(t.name)) { seen.add(t.name); extras.push(t.name); }
+    });
+    catalogItems.filter(c => c.kind === 'service').forEach(c => {
+      if (!seen.has(c.name)) { seen.add(c.name); extras.push(c.name); }
+    });
+    extras.sort((a, b) => a.localeCompare(b));
     return [...THERAPY_TYPES, ...extras];
-  }, [therapyTasks]);
+  }, [therapyTasks, catalogItems]);
+
+  // Instrumentos vendibles: 10 base + catálogo (sin duplicar)
+  const sellableInstruments = useMemo(() => {
+    const seen = new Set<string>(INSTRUMENTS);
+    const extras = catalogItems
+      .filter(c => c.kind === 'instrument' && !seen.has(c.name))
+      .map(c => c.name)
+      .sort((a, b) => a.localeCompare(b));
+    return [...INSTRUMENTS, ...extras];
+  }, [catalogItems]);
 
   // ── Productos ────────────────────────────────────────────────────────────────
   const [products, setProducts] = useState<PortalProduct[]>([]);
@@ -629,8 +657,25 @@ const SalesArea: React.FC = () => {
         <PricesModal
           prices={servicePrices}
           services={sellableServices}
-          instruments={INSTRUMENTS}
+          instruments={sellableInstruments}
+          catalogItems={catalogItems}
           onClose={() => setShowPrices(false)}
+          onAdd={async (name, kind) => {
+            try {
+              await addCatalogItem(name, kind);
+              showToast(`${kind === 'service' ? 'Servicio' : 'Instrumento'} agregado.`);
+            } catch {
+              showToast('No se pudo agregar el ítem.', 'error');
+            }
+          }}
+          onDelete={async (id) => {
+            try {
+              await deleteCatalogItem(id);
+              showToast('Ítem eliminado del catálogo.');
+            } catch {
+              showToast('No se pudo eliminar el ítem.', 'error');
+            }
+          }}
           onSave={async (updated) => {
             try {
               await saveServicePrices(updated);
@@ -650,7 +695,7 @@ const SalesArea: React.FC = () => {
           patients={patients}
           products={products}
           services={sellableServices}
-          instruments={INSTRUMENTS}
+          instruments={sellableInstruments}
           servicePrices={servicePrices}
           onClose={() => setShowRegister(false)}
           onSubmit={async (payload) => {
@@ -674,17 +719,22 @@ interface PricesModalProps {
   prices: Record<string, number>;
   services: readonly string[];
   instruments: readonly string[];
+  catalogItems: CatalogItem[];
   onClose: () => void;
+  onAdd: (name: string, kind: CatalogKind) => Promise<void>;
+  onDelete: (id: string) => Promise<void>;
   onSave: (updated: Record<string, number>) => Promise<void>;
 }
 
-/** Fila reutilizable: nombre + input de precio. */
+/** Fila reutilizable: nombre + input de precio (+ papelera si es eliminable). */
 const PriceRow: React.FC<{
   name: string;
   value: number;
   isBase?: boolean;
+  deletableId?: string;
   onChange: (v: number) => void;
-}> = ({ name, value, isBase, onChange }) => (
+  onDelete?: (id: string) => void;
+}> = ({ name, value, isBase, deletableId, onChange, onDelete }) => (
   <div className="flex items-center gap-2">
     <span className="text-sm text-slate-700 flex-1 font-medium flex items-center gap-1.5 min-w-0">
       <span className="truncate">{name}</span>
@@ -703,20 +753,79 @@ const PriceRow: React.FC<{
         className="w-full pl-7 pr-2 py-2 rounded-xl border border-slate-200 focus:border-blue-500 focus:ring-2 focus:ring-blue-100 outline-none text-sm font-semibold text-slate-800"
       />
     </div>
+    {deletableId && onDelete ? (
+      <button
+        type="button"
+        onClick={() => onDelete(deletableId)}
+        title="Quitar del catálogo"
+        className="shrink-0 p-1.5 rounded-lg text-slate-300 hover:text-rose-500 hover:bg-rose-50 transition-colors"
+      >
+        <Trash2 size={15} />
+      </button>
+    ) : (
+      <span className="w-7 shrink-0" />
+    )}
   </div>
 );
 
-const PricesModal: React.FC<PricesModalProps> = ({ prices, services, instruments, onClose, onSave }) => {
-  const [local, setLocal] = useState<Record<string, number>>(() => {
-    const init: Record<string, number> = {};
-    [...services, ...instruments].forEach(s => { init[s] = prices[s] ?? 0; });
-    return init;
-  });
+/** Fila para agregar un ítem nuevo a una columna. */
+const AddRow: React.FC<{ kind: CatalogKind; onAdd: (name: string, kind: CatalogKind) => void }> = ({ kind, onAdd }) => {
+  const [name, setName] = useState('');
+  const submit = () => {
+    const trimmed = name.trim();
+    if (!trimmed) return;
+    onAdd(trimmed, kind);
+    setName('');
+  };
+  return (
+    <div className="flex items-center gap-2 mt-2">
+      <input
+        type="text"
+        value={name}
+        onChange={e => setName(e.target.value)}
+        onKeyDown={e => e.key === 'Enter' && submit()}
+        placeholder={kind === 'service' ? 'Nuevo servicio...' : 'Nuevo instrumento...'}
+        className="flex-1 min-w-0 px-3 py-2 rounded-xl border border-dashed border-slate-300 focus:border-solid focus:border-blue-500 focus:ring-2 focus:ring-blue-100 outline-none text-sm"
+      />
+      <button
+        type="button"
+        onClick={submit}
+        disabled={!name.trim()}
+        className="shrink-0 inline-flex items-center gap-1 px-3 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-600 text-sm font-semibold transition-colors disabled:opacity-40"
+      >
+        <Plus size={14} /> Agregar
+      </button>
+    </div>
+  );
+};
+
+const PricesModal: React.FC<PricesModalProps> = ({
+  prices, services, instruments, catalogItems, onClose, onAdd, onDelete, onSave,
+}) => {
+  const [local, setLocal] = useState<Record<string, number>>({});
   const [saving, setSaving] = useState(false);
 
   useEscKey(onClose, true);
 
+  // Sincroniza los precios locales cuando cambian los ítems (al agregar uno nuevo)
+  useEffect(() => {
+    setLocal(prev => {
+      const next = { ...prev };
+      [...services, ...instruments].forEach(s => {
+        if (next[s] === undefined) next[s] = prices[s] ?? 0;
+      });
+      return next;
+    });
+  }, [services, instruments, prices]);
+
   const setPrice = (name: string, v: number) => setLocal(p => ({ ...p, [name]: v }));
+
+  // Mapa nombre → id de catálogo (para saber cuáles se pueden eliminar)
+  const catalogIdByName = useMemo(() => {
+    const m = new Map<string, string>();
+    catalogItems.forEach(c => m.set(c.name, c.id));
+    return m;
+  }, [catalogItems]);
 
   const handleSave = async () => {
     setSaving(true);
@@ -730,7 +839,7 @@ const PricesModal: React.FC<PricesModalProps> = ({ prices, services, instruments
         <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between shrink-0">
           <h2 className="font-bold text-slate-800 flex items-center gap-2">
             <Settings2 size={18} className="text-blue-600" />
-            Gestionar precios
+            Gestionar precios y catálogo
           </h2>
           <button onClick={onClose} className="text-slate-400 hover:text-slate-600"><X size={20} /></button>
         </div>
@@ -750,13 +859,13 @@ const PricesModal: React.FC<PricesModalProps> = ({ prices, services, instruments
                   name={service}
                   value={local[service] ?? 0}
                   isBase={(THERAPY_TYPES as readonly string[]).includes(service)}
+                  deletableId={catalogIdByName.get(service)}
                   onChange={v => setPrice(service, v)}
+                  onDelete={onDelete}
                 />
               ))}
             </div>
-            <p className="text-[10px] text-slate-400 mt-3 italic">
-              Los tratamientos que agregas en Terapia Diaria aparecen aquí.
-            </p>
+            <AddRow kind="service" onAdd={onAdd} />
           </div>
 
           {/* Instrumentos */}
@@ -771,27 +880,33 @@ const PricesModal: React.FC<PricesModalProps> = ({ prices, services, instruments
                   key={inst}
                   name={inst}
                   value={local[inst] ?? 0}
+                  isBase={(INSTRUMENTS as readonly string[]).includes(inst)}
+                  deletableId={catalogIdByName.get(inst)}
                   onChange={v => setPrice(inst, v)}
+                  onDelete={onDelete}
                 />
               ))}
             </div>
-            <p className="text-[10px] text-slate-400 mt-3 italic">
-              Equipos de la clínica. Registra su uso en una venta.
-            </p>
+            <AddRow kind="instrument" onAdd={onAdd} />
           </div>
         </div>
 
-        <div className="px-6 py-4 border-t border-slate-100 flex justify-end gap-2 shrink-0">
-          <button onClick={onClose} className="px-4 py-2 rounded-xl border border-slate-200 text-sm font-semibold text-slate-600 hover:bg-slate-50 transition-colors">
-            Cancelar
-          </button>
-          <button
-            onClick={handleSave}
-            disabled={saving}
-            className="px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold disabled:opacity-60 transition-colors"
-          >
-            {saving ? 'Guardando...' : 'Guardar precios'}
-          </button>
+        <div className="px-6 py-4 border-t border-slate-100 flex items-center justify-between gap-2 shrink-0">
+          <p className="text-[11px] text-slate-400 hidden sm:block">
+            Agrega servicios o instrumentos con "Agregar". Guarda para aplicar los precios.
+          </p>
+          <div className="flex gap-2 ml-auto">
+            <button onClick={onClose} className="px-4 py-2 rounded-xl border border-slate-200 text-sm font-semibold text-slate-600 hover:bg-slate-50 transition-colors">
+              Cancelar
+            </button>
+            <button
+              onClick={handleSave}
+              disabled={saving}
+              className="px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold disabled:opacity-60 transition-colors"
+            >
+              {saving ? 'Guardando...' : 'Guardar precios'}
+            </button>
+          </div>
         </div>
       </div>
     </div>
