@@ -19,3 +19,19 @@ export const SESSION_STATUSES: SessionStatus[] = [
   'Efectuada',
   'Pagada'
 ];
+
+// Instrumentos / equipos de la clínica. Se les pone precio en Área Reservada
+// (columna "Instrumentos") y se pueden registrar en una venta para dejar
+// constancia de qué equipo se usó con el paciente. Lista fija.
+export const INSTRUMENTS = [
+  'TENS',
+  'Ondas Rusas',
+  'Ultrasonido',
+  'Láser',
+  'Electro Punción',
+  'Infrarrojo',
+  'Compresas Frías y Calientes',
+  'Botas de Compresión',
+  'Magneto',
+  'Ondas de Choque',
+] as const;

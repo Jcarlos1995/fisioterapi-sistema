@@ -4,9 +4,11 @@ import {
 } from 'firebase/firestore';
 import { db } from '../../lib/firebase';
 
+export type SaleType = 'service' | 'product' | 'instrument';
+
 export interface Sale {
   id: string;
-  type: 'service' | 'product';
+  type: SaleType;
   patientId: string;
   patientName: string;
   itemName: string;
@@ -26,7 +28,7 @@ export interface Sale {
 }
 
 export interface SalePayload {
-  type: 'service' | 'product';
+  type: SaleType;
   patientId: string;
   patientName: string;
   itemName: string;

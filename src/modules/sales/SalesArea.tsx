@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import {
   Lock, Plus, Settings2, Wrench, Package, TrendingUp, TrendingDown, Search, X,
   BadgeDollarSign, User, CalendarRange, Trash2, WifiOff, AlertTriangle, Calendar,
+  Activity, Stethoscope,
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { useToast } from '../../context/ToastContext';
@@ -10,13 +11,13 @@ import ConfirmModal from '../../shared/components/ConfirmModal';
 import { Patient } from '../../types';
 import {
   subscribeToSalesByMonth, subscribeToPacks, fetchMonthTotal,
-  fetchServicePrices, saveServicePrices, deleteSale, createSale, Sale, SalePayload,
+  fetchServicePrices, saveServicePrices, deleteSale, createSale, Sale, SalePayload, SaleType,
 } from './salesService';
 import { subscribeToPatients } from '../patients/patientsService';
 import { subscribeToProducts } from '../products/productsService';
 import { fetchProfessionalByEmail } from '../professionals/professionalsService';
 import { subscribeToTherapyTasks, TherapyTask } from '../daily-therapy/dailyTherapyService';
-import { THERAPY_TYPES } from '../../constants';
+import { THERAPY_TYPES, INSTRUMENTS } from '../../constants';
 
 interface PortalProduct {
   id: string;
@@ -212,7 +213,7 @@ const SalesArea: React.FC = () => {
 
   // ── Filtros y pestañas ───────────────────────────────────────────────────────
   const [activeTab, setActiveTab]       = useState<'sales' | 'packs'>('sales');
-  const [filterType, setFilterType]     = useState<'all' | 'service' | 'product'>('all');
+  const [filterType, setFilterType]     = useState<'all' | SaleType>('all');
   const [patientSearch, setPatientSearch] = useState('');
 
   const filteredSales = useMemo(() => {
@@ -236,14 +237,16 @@ const SalesArea: React.FC = () => {
   }, [filteredSales]);
 
   // ── KPIs ─────────────────────────────────────────────────────────────────────
+  // Servicios e instrumentos son "atención" (no descuentan inventario), se agrupan
+  // en el mismo KPI para mantener el cuadre: Total = atención + productos.
   const kpis = useMemo(() => {
-    const services = sales.filter(s => s.type === 'service');
-    const products = sales.filter(s => s.type === 'product');
+    const attention = sales.filter(s => s.type === 'service' || s.type === 'instrument');
+    const products  = sales.filter(s => s.type === 'product');
     return {
       total:           sales.reduce((sum, s) => sum + s.total, 0),
-      serviceRevenue:  services.reduce((sum, s) => sum + s.total, 0),
+      serviceRevenue:  attention.reduce((sum, s) => sum + s.total, 0),
       productRevenue:  products.reduce((sum, s) => sum + s.total, 0),
-      serviceCount:    services.length,
+      serviceCount:    attention.length,
       productCount:    products.length,
     };
   }, [sales]);
@@ -442,11 +445,12 @@ const SalesArea: React.FC = () => {
               />
             </div>
 
-            <div className="flex bg-slate-100 rounded-xl p-1 gap-1">
+            <div className="flex bg-slate-100 rounded-xl p-1 gap-1 flex-wrap">
               {([
-                { key: 'all',     label: 'Todas' },
-                { key: 'service', label: 'Servicios' },
-                { key: 'product', label: 'Productos' },
+                { key: 'all',        label: 'Todas' },
+                { key: 'service',    label: 'Servicios' },
+                { key: 'instrument', label: 'Instrumentos' },
+                { key: 'product',    label: 'Productos' },
               ] as { key: typeof filterType; label: string }[]).map(({ key, label }) => (
                 <button
                   key={key}
@@ -504,11 +508,15 @@ const SalesArea: React.FC = () => {
                         className="bg-white border border-slate-100 rounded-2xl px-5 py-3.5 flex items-center gap-4 shadow-sm"
                       >
                         <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${
-                          sale.type === 'service' ? 'bg-violet-50' : 'bg-amber-50'
+                          sale.type === 'product' ? 'bg-amber-50'
+                          : sale.type === 'instrument' ? 'bg-teal-50'
+                          : 'bg-violet-50'
                         }`}>
-                          {sale.type === 'service'
-                            ? <Wrench size={18} className="text-violet-600" />
-                            : <Package size={18} className="text-amber-600" />}
+                          {sale.type === 'product'
+                            ? <Package size={18} className="text-amber-600" />
+                            : sale.type === 'instrument'
+                              ? <Activity size={18} className="text-teal-600" />
+                              : <Wrench size={18} className="text-violet-600" />}
                         </div>
 
                         <div className="flex-1 min-w-0">
@@ -621,6 +629,7 @@ const SalesArea: React.FC = () => {
         <PricesModal
           prices={servicePrices}
           services={sellableServices}
+          instruments={INSTRUMENTS}
           onClose={() => setShowPrices(false)}
           onSave={async (updated) => {
             try {
@@ -641,6 +650,7 @@ const SalesArea: React.FC = () => {
           patients={patients}
           products={products}
           services={sellableServices}
+          instruments={INSTRUMENTS}
           servicePrices={servicePrices}
           onClose={() => setShowRegister(false)}
           onSubmit={async (payload) => {
@@ -663,19 +673,50 @@ const SalesArea: React.FC = () => {
 interface PricesModalProps {
   prices: Record<string, number>;
   services: readonly string[];
+  instruments: readonly string[];
   onClose: () => void;
   onSave: (updated: Record<string, number>) => Promise<void>;
 }
 
-const PricesModal: React.FC<PricesModalProps> = ({ prices, services, onClose, onSave }) => {
+/** Fila reutilizable: nombre + input de precio. */
+const PriceRow: React.FC<{
+  name: string;
+  value: number;
+  isBase?: boolean;
+  onChange: (v: number) => void;
+}> = ({ name, value, isBase, onChange }) => (
+  <div className="flex items-center gap-2">
+    <span className="text-sm text-slate-700 flex-1 font-medium flex items-center gap-1.5 min-w-0">
+      <span className="truncate">{name}</span>
+      {isBase && (
+        <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-blue-50 text-blue-500 uppercase shrink-0">base</span>
+      )}
+    </span>
+    <div className="relative w-24 shrink-0">
+      <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400 text-sm">S/</span>
+      <input
+        type="number"
+        min={0}
+        step={0.5}
+        value={value}
+        onChange={e => onChange(Number(e.target.value))}
+        className="w-full pl-7 pr-2 py-2 rounded-xl border border-slate-200 focus:border-blue-500 focus:ring-2 focus:ring-blue-100 outline-none text-sm font-semibold text-slate-800"
+      />
+    </div>
+  </div>
+);
+
+const PricesModal: React.FC<PricesModalProps> = ({ prices, services, instruments, onClose, onSave }) => {
   const [local, setLocal] = useState<Record<string, number>>(() => {
     const init: Record<string, number> = {};
-    services.forEach(s => { init[s] = prices[s] ?? 0; });
+    [...services, ...instruments].forEach(s => { init[s] = prices[s] ?? 0; });
     return init;
   });
   const [saving, setSaving] = useState(false);
 
   useEscKey(onClose, true);
+
+  const setPrice = (name: string, v: number) => setLocal(p => ({ ...p, [name]: v }));
 
   const handleSave = async () => {
     setSaving(true);
@@ -685,40 +726,62 @@ const PricesModal: React.FC<PricesModalProps> = ({ prices, services, onClose, on
 
   return (
     <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-      <div className="bg-white w-full max-w-sm rounded-2xl shadow-2xl overflow-hidden">
-        <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between">
+      <div className="bg-white w-full max-w-2xl rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
+        <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between shrink-0">
           <h2 className="font-bold text-slate-800 flex items-center gap-2">
             <Settings2 size={18} className="text-blue-600" />
-            Precio por servicio
+            Gestionar precios
           </h2>
           <button onClick={onClose} className="text-slate-400 hover:text-slate-600"><X size={20} /></button>
         </div>
 
-        <div className="px-6 py-4 space-y-3 max-h-80 overflow-y-auto">
-          {services.map(service => (
-            <div key={service} className="flex items-center gap-3">
-              <span className="text-sm text-slate-700 flex-1 font-medium flex items-center gap-2">
-                {service}
-                {(THERAPY_TYPES as readonly string[]).includes(service) && (
-                  <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-blue-50 text-blue-500 uppercase">base</span>
-                )}
-              </span>
-              <div className="relative w-28">
-                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm">S/</span>
-                <input
-                  type="number"
-                  min={0}
-                  step={0.5}
+        {/* Dos columnas: Servicios | Instrumentos */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 overflow-y-auto">
+          {/* Servicios */}
+          <div className="px-5 py-4 sm:border-r border-slate-100">
+            <p className="text-xs font-bold text-violet-600 uppercase tracking-wide flex items-center gap-1.5 mb-3">
+              <Stethoscope size={14} />
+              Servicios
+            </p>
+            <div className="space-y-2.5">
+              {services.map(service => (
+                <PriceRow
+                  key={service}
+                  name={service}
                   value={local[service] ?? 0}
-                  onChange={e => setLocal(p => ({ ...p, [service]: Number(e.target.value) }))}
-                  className="w-full pl-8 pr-3 py-2 rounded-xl border border-slate-200 focus:border-blue-500 focus:ring-2 focus:ring-blue-100 outline-none text-sm font-semibold text-slate-800"
+                  isBase={(THERAPY_TYPES as readonly string[]).includes(service)}
+                  onChange={v => setPrice(service, v)}
                 />
-              </div>
+              ))}
             </div>
-          ))}
+            <p className="text-[10px] text-slate-400 mt-3 italic">
+              Los tratamientos que agregas en Terapia Diaria aparecen aquí.
+            </p>
+          </div>
+
+          {/* Instrumentos */}
+          <div className="px-5 py-4 bg-slate-50/60">
+            <p className="text-xs font-bold text-teal-600 uppercase tracking-wide flex items-center gap-1.5 mb-3">
+              <Activity size={14} />
+              Instrumentos
+            </p>
+            <div className="space-y-2.5">
+              {instruments.map(inst => (
+                <PriceRow
+                  key={inst}
+                  name={inst}
+                  value={local[inst] ?? 0}
+                  onChange={v => setPrice(inst, v)}
+                />
+              ))}
+            </div>
+            <p className="text-[10px] text-slate-400 mt-3 italic">
+              Equipos de la clínica. Registra su uso en una venta.
+            </p>
+          </div>
         </div>
 
-        <div className="px-6 py-4 border-t border-slate-100 flex justify-end gap-2">
+        <div className="px-6 py-4 border-t border-slate-100 flex justify-end gap-2 shrink-0">
           <button onClick={onClose} className="px-4 py-2 rounded-xl border border-slate-200 text-sm font-semibold text-slate-600 hover:bg-slate-50 transition-colors">
             Cancelar
           </button>
@@ -744,15 +807,16 @@ interface RegisterSaleModalProps {
   patients: SalePatient[];
   products: PortalProduct[];
   services: readonly string[];
+  instruments: readonly string[];
   servicePrices: Record<string, number>;
   onClose: () => void;
   onSubmit: (payload: SalePayload) => Promise<void>;
 }
 
 const RegisterSaleModal: React.FC<RegisterSaleModalProps> = ({
-  patients, products, services, servicePrices, onClose, onSubmit,
+  patients, products, services, instruments, servicePrices, onClose, onSubmit,
 }) => {
-  const [type, setType]           = useState<'service' | 'product'>('service');
+  const [type, setType]           = useState<SaleType>('service');
   const [patientSearch, setPatientSearch] = useState('');
   const [selectedPatient, setSelectedPatient] = useState<SalePatient | null>(null);
   const [showDropdown, setShowDropdown]       = useState(false);
@@ -781,10 +845,14 @@ const RegisterSaleModal: React.FC<RegisterSaleModalProps> = ({
   const canSubmit = selectedPatient && itemName && unitPrice > 0 && date;
 
   // Qué falta para poder registrar — se muestra junto al botón deshabilitado
+  const missingItemLabel =
+    type === 'product' ? 'Falta seleccionar el producto.'
+    : type === 'instrument' ? 'Falta seleccionar el instrumento.'
+    : 'Falta seleccionar el servicio.';
   const missingReason = !selectedPatient
     ? 'Falta seleccionar el paciente.'
     : !itemName
-      ? (type === 'service' ? 'Falta seleccionar el servicio.' : 'Falta seleccionar el producto.')
+      ? missingItemLabel
       : unitPrice <= 0
         ? 'El precio debe ser mayor a 0.'
         : !date
@@ -806,7 +874,7 @@ const RegisterSaleModal: React.FC<RegisterSaleModalProps> = ({
   }, [products, productSearch]);
 
   // Al cambiar tipo, limpiar selección de ítem
-  const handleTypeChange = (t: 'service' | 'product') => {
+  const handleTypeChange = (t: SaleType) => {
     setType(t);
     setItemName('');
     setItemId('');
@@ -819,9 +887,10 @@ const RegisterSaleModal: React.FC<RegisterSaleModalProps> = ({
     setValidTo(TODAY);
   };
 
-  const handleSelectService = (therapy: string) => {
-    setItemName(therapy);
-    setUnitPrice(servicePrices[therapy] ?? 0);
+  // Servicios e instrumentos toman su precio del mismo mapa servicePrices
+  const handleSelectService = (name: string) => {
+    setItemName(name);
+    setUnitPrice(servicePrices[name] ?? 0);
   };
 
   const handleSelectProduct = (p: PortalProduct) => {
@@ -871,13 +940,14 @@ const RegisterSaleModal: React.FC<RegisterSaleModalProps> = ({
             <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2">Tipo de venta</p>
             <div className="flex gap-2">
               {([
-                { key: 'service', label: 'Servicio', icon: <Wrench size={14} /> },
-                { key: 'product', label: 'Producto', icon: <Package size={14} /> },
-              ] as { key: 'service' | 'product'; label: string; icon: React.ReactNode }[]).map(({ key, label, icon }) => (
+                { key: 'service',    label: 'Servicio',    icon: <Wrench size={14} /> },
+                { key: 'instrument', label: 'Instrumento', icon: <Activity size={14} /> },
+                { key: 'product',    label: 'Producto',    icon: <Package size={14} /> },
+              ] as { key: SaleType; label: string; icon: React.ReactNode }[]).map(({ key, label, icon }) => (
                 <button
                   key={key}
                   onClick={() => handleTypeChange(key)}
-                  className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl text-sm font-semibold transition-all border ${
+                  className={`flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-xl text-xs font-semibold transition-all border ${
                     type === key
                       ? 'bg-blue-600 text-white border-blue-600 shadow-sm'
                       : 'bg-white text-slate-500 border-slate-200 hover:border-slate-300'
@@ -928,26 +998,32 @@ const RegisterSaleModal: React.FC<RegisterSaleModalProps> = ({
           </div>
 
           {/* Selección de ítem */}
-          {type === 'service' ? (
+          {type === 'service' || type === 'instrument' ? (
             <div>
-              <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2">Servicio</p>
+              <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2">
+                {type === 'instrument' ? 'Instrumento' : 'Servicio'}
+              </p>
               <div className="grid grid-cols-2 gap-2 max-h-44 overflow-y-auto pr-0.5">
-                {services.map(service => (
-                  <button
-                    key={service}
-                    onClick={() => handleSelectService(service)}
-                    className={`text-left px-3 py-2.5 rounded-xl border text-sm font-medium transition-all ${
-                      itemName === service
-                        ? 'border-violet-400 bg-violet-50 text-violet-700'
-                        : 'border-slate-200 text-slate-600 hover:border-slate-300 hover:bg-slate-50'
-                    }`}
-                  >
-                    <span className="block truncate">{service}</span>
-                    {(servicePrices[service] ?? 0) > 0 && (
-                      <span className="text-xs text-slate-400 font-semibold">S/ {servicePrices[service].toFixed(2)}</span>
-                    )}
-                  </button>
-                ))}
+                {(type === 'instrument' ? instruments : services).map(name => {
+                  const selected = itemName === name;
+                  const accent = type === 'instrument'
+                    ? (selected ? 'border-teal-400 bg-teal-50 text-teal-700' : '')
+                    : (selected ? 'border-violet-400 bg-violet-50 text-violet-700' : '');
+                  return (
+                    <button
+                      key={name}
+                      onClick={() => handleSelectService(name)}
+                      className={`text-left px-3 py-2.5 rounded-xl border text-sm font-medium transition-all ${
+                        selected ? accent : 'border-slate-200 text-slate-600 hover:border-slate-300 hover:bg-slate-50'
+                      }`}
+                    >
+                      <span className="block truncate">{name}</span>
+                      {(servicePrices[name] ?? 0) > 0 && (
+                        <span className="text-xs text-slate-400 font-semibold">S/ {servicePrices[name].toFixed(2)}</span>
+                      )}
+                    </button>
+                  );
+                })}
               </div>
             </div>
           ) : (
